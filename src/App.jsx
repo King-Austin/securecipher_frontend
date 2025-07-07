@@ -25,7 +25,7 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Styles
 import './App.css';
-import SecureOnboardingForm from './components/secureOnBoardingForm';
+import SecureOnboardingForm from './components/SecureOnBoardingForm';
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
