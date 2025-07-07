@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const BASEURL = 'https://ngwfrg99-8000.euw.devtunnels.ms'; // Change this to your actual backend URL
+const BASEURL = 'http://localhost:8000';
 
 // Utility helpers
 const toBase64 = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer)));
@@ -12,24 +12,32 @@ async function exportPublicKeyToPEM(key) {
   return `-----BEGIN PUBLIC KEY-----\n${b64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
 }
 
-async function signPayload(privateKey, data) {
-  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-384' }, privateKey, data);
-  return toBase64(sig);
+async function signPayload(client_private_key, data) {
+  const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-384' }, client_private_key, data);
+  return toBase64(signature);
 }
 
-async function deriveSessionKey(privateKey, peerPublicKey) {
-  const sharedSecret = await crypto.subtle.deriveBits(
-    { name: 'ECDH', public: peerPublicKey },
-    privateKey,
+async function deriveSessionKey(ephemeral_private_key, server_public_key) {
+  const shared_secret = await crypto.subtle.deriveBits(
+    { name: 'ECDH', public: server_public_key },
+    ephemeral_private_key,
     384
   );
-  return crypto.subtle.importKey('raw', sharedSecret.slice(0, 32), { name: 'AES-GCM' }, false, ['encrypt']);
+  
+  console.log("🔐 Derived shared secret (first 32 bytes):", Array.from(shared_secret.slice(0, 32)));
+  
+  // Import the shared secret as an AES-GCM key for session encryption
+  return crypto.subtle.importKey('raw', shared_secret.slice(0, 32), { name: 'AES-GCM' }, false, ['encrypt']);
 }
 
-async function encryptPayload(key, data) {
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
-  return { ciphertext: toBase64(encrypted), iv: toBase64(iv) };
+async function encryptPayload(session_key, data) {
+  const initialization_vector = window.crypto.getRandomValues(new Uint8Array(12));
+  const encrypted_data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: initialization_vector }, session_key, data);
+  
+  return { 
+    ciphertext: toBase64(encrypted_data), 
+    iv: toBase64(initialization_vector) 
+  };
 }
 
 export default function SecureOnboardingForm() {
@@ -37,71 +45,113 @@ export default function SecureOnboardingForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setStatus("Submitting...");
+    setStatus("Processing secure transaction...");
 
     try {
-      // 1. Prepare mock data
-      const userData = {
+      // 1. Prepare user transaction data
+      const user_transaction_data = {
         username: "demo_user",
         email: "demo@example.com",
         phone: "1234567890"
       };
-      const txBytes = new TextEncoder().encode(JSON.stringify(userData));
+      
+      // 2. Create deterministic JSON for signing (consistent order)
+      const transaction_json_for_signing = JSON.stringify(user_transaction_data, Object.keys(user_transaction_data).sort());
+      const transaction_bytes = new TextEncoder().encode(transaction_json_for_signing);
+      
+      console.log("🔐 Transaction JSON for signing:", transaction_json_for_signing);
+      console.log("🔐 Transaction bytes:", Array.from(transaction_bytes));
 
-      // 2. ECDSA keypair
-      const ecdsaKey = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-384' }, true, ['sign', 'verify']);
-      const q_p = await exportPublicKeyToPEM(ecdsaKey.publicKey);
-      const sig_p = await signPayload(ecdsaKey.privateKey, txBytes);
+      // 3. Generate client ECDSA keypair for transaction signing
+      const client_ecdsa_keypair = await crypto.subtle.generateKey(
+        { name: 'ECDSA', namedCurve: 'P-384' }, 
+        true, 
+        ['sign', 'verify']
+      );
+      
+      const client_public_key_pem = await exportPublicKeyToPEM(client_ecdsa_keypair.publicKey);
+      const client_signature = await signPayload(client_ecdsa_keypair.privateKey, transaction_bytes);
 
-      // 3. Get middleware pubkey
-      const res = await fetch(`${BASEURL}/api/middleware/public-key`);
-      const { public_key } = await res.json();
-      const raw = fromBase64(public_key.replace(/-----.*?-----/g, '').replace(/\s+/g, ''));
-      const serverPubKey = await crypto.subtle.importKey('spki', raw.buffer, { name: 'ECDH', namedCurve: 'P-384' }, true, []);
+      console.log("🔐 Client signature created:", client_signature.substring(0, 50) + "...");
+      console.log("🔐 Client public key:", client_public_key_pem.substring(0, 100) + "...");
 
-      // 4. Ephemeral ECDH keypair
-      const ephKey = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-384' }, true, ['deriveBits']);
-      const ephPubSPKI = await crypto.subtle.exportKey('spki', ephKey.publicKey);
+      // 4. Test signature locally (self-verification)
+      const local_verification_test = await crypto.subtle.verify(
+        { name: 'ECDSA', hash: 'SHA-384' },
+        client_ecdsa_keypair.publicKey,
+        fromBase64(client_signature),
+        transaction_bytes
+      );
+      console.log("🔐 Local signature verification:", local_verification_test);
 
-      // 5. Derive AES session key
-      const sessionKey = await deriveSessionKey(ephKey.privateKey, serverPubKey);
+      // 5. Get server's public key for ECDH key exchange
+      setStatus("Fetching server public key...");
+      const server_key_response = await fetch(`${BASEURL}/api/middleware/public-key`);
+      const { public_key: server_public_key_pem } = await server_key_response.json();
+      
+      // Parse server public key
+      const server_public_key_base64 = server_public_key_pem.replace(/-----.*?-----/g, '').replace(/\s+/g, '');
+      const server_public_key_bytes = fromBase64(server_public_key_base64);
+      const server_public_key = await crypto.subtle.importKey('spki', server_public_key_bytes.buffer, { name: 'ECDH', namedCurve: 'P-384' }, true, []);
 
-      // 6. Encrypt payload
-      const payload = { target: "registration", tx: userData, sig_p, q_p };
-      const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
-      const { ciphertext, iv } = await encryptPayload(sessionKey, payloadBytes);
+      // 6. Generate ephemeral ECDH keypair for session key derivation
+      setStatus("Generating ephemeral keys...");
+      const ephemeral_ecdh_keypair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-384' }, true, ['deriveBits']);
+      const ephemeral_public_key_spki = await crypto.subtle.exportKey('spki', ephemeral_ecdh_keypair.publicKey);
 
-      // 7. Send to middleware
-      const response = await fetch(`${BASEURL}/api/secure/gateway`, {
+      // 7. Derive session key using ECDH
+      setStatus("Deriving session key...");
+      const session_key = await deriveSessionKey(ephemeral_ecdh_keypair.privateKey, server_public_key);
+      
+      // 8. Create and encrypt payload
+      setStatus("Encrypting payload...");
+      const secure_payload = { 
+        target: "registration", 
+        tx: user_transaction_data, 
+        sig_p: client_signature,     // Client signature
+        q_p: client_public_key_pem   // Client public key
+      };
+      
+      const payload_bytes = new TextEncoder().encode(JSON.stringify(secure_payload));
+      const { ciphertext, iv } = await encryptPayload(session_key, payload_bytes);
+
+      // 9. Send encrypted payload to SecureCipher gateway
+      setStatus("Sending to SecureCipher gateway...");
+      const gateway_response = await fetch(`${BASEURL}/api/secure/gateway`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ephemeral_pubkey: toBase64(ephPubSPKI),
+          ephemeral_pubkey: toBase64(ephemeral_public_key_spki),
           ciphertext,
           iv
         })
       });
 
-      const result = await response.json();
-      setStatus(result.status || JSON.stringify(result));
-    } catch (err) {
-      console.error(err);
-      setStatus("Error: " + err.message);
+      const result = await gateway_response.json();
+      setStatus(`✅ ${result.status || JSON.stringify(result)}`);
+      
+    } catch (error) {
+      console.error('❌ SecureCipher Error:', error);
+      setStatus(`❌ Error: ${error.message}`);
     }
   };
 
   return (
     <div className="max-w-md mx-auto p-6 bg-white rounded-xl shadow-md mt-10">
-      <h2 className="text-xl font-semibold mb-4">SecureCipher: Mock Onboarding</h2>
+      <h2 className="text-xl font-semibold mb-4">🔐 SecureCipher: Secure Transaction</h2>
       <form onSubmit={handleSubmit}>
         <button
           type="submit"
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full"
         >
-          Submit Secure Request
+          🔐 Submit Secure Transaction
         </button>
       </form>
-      {status && <p className="mt-4 text-gray-700">🔐 Server Response: <b>{status}</b></p>}
+      {status && (
+        <div className="mt-4 p-4 bg-gray-100 rounded">
+          <p className="text-sm font-mono">🔐 Status: {status}</p>
+        </div>
+      )}
     </div>
   );
 }
