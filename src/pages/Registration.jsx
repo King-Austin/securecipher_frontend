@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, Shield, AlertCircle } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { ChevronRight, ChevronLeft, Shield, AlertCircle, Loader2 } from 'lucide-react';
+import { secureApi } from '../services/secureApi';
+import { SecureKeyManager } from '../utils/SecureKeyManager';
 
-const steps = ['Personal Information', 'Account Setup', 'Verification'];
+const steps = ['Personal Information', 'Account Security', 'Verification'];
 
 export default function Registration() {
   const [currentStep, setCurrentStep] = useState(0);
@@ -12,8 +13,8 @@ export default function Registration() {
     last_name: '',
     email: '',
     username: '',
-    password: '',
-    confirm_password: '',
+    pin: '',
+    confirm_pin: '',
     phone: '',
     bvn: '',
     nin: '',
@@ -23,8 +24,8 @@ export default function Registration() {
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
   
-  const { register } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -66,22 +67,22 @@ export default function Registration() {
         isValid = false;
       }
     } else if (currentStep === 1) {
-      // Validate account setup
+      // Validate account security
       if (!formData.username.trim()) {
         stepErrors.username = 'Username is required';
         isValid = false;
       }
       
-      if (!formData.password) {
-        stepErrors.password = 'Password is required';
+      if (!formData.pin) {
+        stepErrors.pin = 'A 6-digit PIN is required';
         isValid = false;
-      } else if (formData.password.length < 8) {
-        stepErrors.password = 'Password must be at least 8 characters';
+      } else if (!/^\d{6}$/.test(formData.pin)) {
+        stepErrors.pin = 'PIN must be exactly 6 digits';
         isValid = false;
       }
       
-      if (formData.password !== formData.confirm_password) {
-        stepErrors.confirm_password = 'Passwords do not match';
+      if (formData.pin !== formData.confirm_pin) {
+        stepErrors.confirm_pin = 'PINs do not match';
         isValid = false;
       }
     } else if (currentStep === 2) {
@@ -122,427 +123,229 @@ export default function Registration() {
     return isValid;
   };
 
-  const nextStep = () => {
+  const handleNext = () => {
     if (validateStep()) {
-      if (currentStep < steps.length - 1) {
-        setCurrentStep(currentStep + 1);
-      } else {
-        handleSubmit();
-      }
+      setCurrentStep(prev => Math.min(prev + 1, steps.length - 1));
     }
   };
 
-  const prevStep = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-    }
+  const handleBack = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 0));
   };
-  
-  const handleSubmit = async () => {
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateStep()) {
+      return;
+    }
+
     setIsSubmitting(true);
-    
+    setSubmissionError('');
+
     try {
-      // Prepare data for submission
-      const userData = {
-        username: formData.username,
-        password: formData.password,
-        email: formData.email,
-        first_name: formData.first_name,
-        last_name: formData.last_name,
-        phone: formData.phone,
-        bvn: formData.bvn,
-        nin: formData.nin,
-        date_of_birth: formData.date_of_birth,
-        address: formData.address,
-        occupation: formData.occupation,
+      // 1. Generate cryptographic key pair
+      const keyPair = await SecureKeyManager.generateKeyPair();
+      const publicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(keyPair.publicKey);
+
+      // 2. Encrypt the private key with the user's PIN
+      const encryptedKey = await SecureKeyManager.encryptPrivateKey(keyPair.privateKey, formData.pin);
+
+      // 3. Store the encrypted key securely in IndexedDB
+      await SecureKeyManager.storeEncryptedKey(encryptedKey);
+
+      // 4. Prepare the registration payload for the backend
+      const registrationPayload = {
+        user_profile: {
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          email: formData.email,
+          phone: formData.phone,
+          date_of_birth: formData.date_of_birth,
+          address: formData.address,
+          occupation: formData.occupation,
+        },
+        kyc_data: {
+          bvn: formData.bvn,
+          nin: formData.nin,
+        },
+        auth_data: {
+          username: formData.username,
+          public_key: publicKeyPem,
+        }
       };
+
+      // 5. Send the data through the secure gateway
+      const response = await secureApi('register', registrationPayload);
+
+      console.log('Registration successful:', response);
       
-      // Register user with API
-      await register(userData);
-      
-      // Navigate to PIN setup page
-      navigate('/pin-setup');
-    } catch (error) {
-      console.error('Registration error:', error);
-      
-      // Handle API errors
-      if (error.data) {
-        setErrors(prev => ({ ...prev, ...error.data }));
-      } else {
-        setErrors({ general: 'An error occurred during registration. Please try again.' });
-      }
+      // On success, navigate to the login page to use the new key
+      navigate('/login');
+
+    } catch (err) {
+      console.error('Registration failed:', err);
+      setSubmissionError(err.message || 'An unexpected error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const renderStep = () => {
+    switch (currentStep) {
+      case 0:
+        return <Step1 formData={formData} handleChange={handleChange} errors={errors} />;
+      case 1:
+        return <Step2 formData={formData} handleChange={handleChange} errors={errors} />;
+      case 2:
+        return <Step3 formData={formData} handleChange={handleChange} errors={errors} />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <div className="flex-1 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-md">
-          <div className="text-center">
-            <h2 className="text-3xl font-extrabold text-gray-900">
-              Secure Cipher Bank
-            </h2>
-            <p className="mt-2 text-sm text-gray-600">
-              Create your secure digital banking account
-            </p>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl w-full space-y-8 bg-white p-10 rounded-xl shadow-lg">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Create Your Secure Account
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Step {currentStep + 1} of {steps.length}: {steps[currentStep]}
+          </p>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="w-full">
+          <div className="flex justify-between mb-1">
+            {steps.map((step, index) => (
+              <div key={step} className={`text-xs font-medium ${index <= currentStep ? 'text-green-700' : 'text-gray-400'}`}>
+                {step}
+              </div>
+            ))}
           </div>
-
-          <div className="mt-8">
-            {/* Step indicator */}
-            <div className="mb-8">
-              <div className="flex items-center justify-between">
-                {steps.map((step, index) => (
-                  <div key={step} className="flex items-center">
-                    <div className={`flex items-center justify-center h-8 w-8 rounded-full ${
-                      currentStep >= index ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
-                    }`}>
-                      {index + 1}
-                    </div>
-                    <div className="ml-2 text-sm font-medium text-gray-700">{step}</div>
-                    {index < steps.length - 1 && (
-                      <div className="ml-2 h-0.5 w-16 bg-gray-200"></div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-              {/* General error message */}
-              {errors.general && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative">
-                  <div className="flex">
-                    <AlertCircle className="h-5 w-5 mr-2" />
-                    <span>{errors.general}</span>
-                  </div>
-                </div>
-              )}
-
-              {currentStep === 0 ? (
-                <form>
-                  <div className="space-y-6">
-                    <div>
-                      <label htmlFor="first_name" className="block text-sm font-medium text-gray-700">
-                        First Name
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="first_name"
-                          name="first_name"
-                          type="text"
-                          required
-                          value={formData.first_name}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.first_name ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.first_name && (
-                          <p className="mt-1 text-sm text-red-600">{errors.first_name}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="last_name" className="block text-sm font-medium text-gray-700">
-                        Last Name
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="last_name"
-                          name="last_name"
-                          type="text"
-                          required
-                          value={formData.last_name}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.last_name ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.last_name && (
-                          <p className="mt-1 text-sm text-red-600">{errors.last_name}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                        Email Address
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="email"
-                          name="email"
-                          type="email"
-                          required
-                          value={formData.email}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.email ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.email && (
-                          <p className="mt-1 text-sm text-red-600">{errors.email}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-                        Phone Number
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="phone"
-                          name="phone"
-                          type="tel"
-                          required
-                          value={formData.phone}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.phone ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.phone && (
-                          <p className="mt-1 text-sm text-red-600">{errors.phone}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              ) : currentStep === 1 ? (
-                <form>
-                  <div className="space-y-6">
-                    <div>
-                      <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                        Username
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="username"
-                          name="username"
-                          type="text"
-                          required
-                          value={formData.username}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.username ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.username && (
-                          <p className="mt-1 text-sm text-red-600">{errors.username}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                        Password
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="password"
-                          name="password"
-                          type="password"
-                          required
-                          value={formData.password}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.password ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.password && (
-                          <p className="mt-1 text-sm text-red-600">{errors.password}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="confirm_password" className="block text-sm font-medium text-gray-700">
-                        Confirm Password
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="confirm_password"
-                          name="confirm_password"
-                          type="password"
-                          required
-                          value={formData.confirm_password}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.confirm_password ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.confirm_password && (
-                          <p className="mt-1 text-sm text-red-600">{errors.confirm_password}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              ) : (
-                <form>
-                  <div className="space-y-6">
-                    <div>
-                      <label htmlFor="bvn" className="block text-sm font-medium text-gray-700">
-                        Bank Verification Number (BVN)
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="bvn"
-                          name="bvn"
-                          type="text"
-                          required
-                          value={formData.bvn}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.bvn ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.bvn && (
-                          <p className="mt-1 text-sm text-red-600">{errors.bvn}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="nin" className="block text-sm font-medium text-gray-700">
-                        National Identification Number (NIN)
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="nin"
-                          name="nin"
-                          type="text"
-                          required
-                          value={formData.nin}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.nin ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.nin && (
-                          <p className="mt-1 text-sm text-red-600">{errors.nin}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="date_of_birth" className="block text-sm font-medium text-gray-700">
-                        Date of Birth
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="date_of_birth"
-                          name="date_of_birth"
-                          type="date"
-                          required
-                          value={formData.date_of_birth}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.date_of_birth ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.date_of_birth && (
-                          <p className="mt-1 text-sm text-red-600">{errors.date_of_birth}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="address" className="block text-sm font-medium text-gray-700">
-                        Address
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="address"
-                          name="address"
-                          type="text"
-                          required
-                          value={formData.address}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.address ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.address && (
-                          <p className="mt-1 text-sm text-red-600">{errors.address}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="occupation" className="block text-sm font-medium text-gray-700">
-                        Occupation
-                      </label>
-                      <div className="mt-1">
-                        <input
-                          id="occupation"
-                          name="occupation"
-                          type="text"
-                          required
-                          value={formData.occupation}
-                          onChange={handleChange}
-                          className={`appearance-none block w-full px-3 py-2 border ${
-                            errors.occupation ? 'border-red-300' : 'border-gray-300'
-                          } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
-                        />
-                        {errors.occupation && (
-                          <p className="mt-1 text-sm text-red-600">{errors.occupation}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              )}
-
-              <div className="mt-6 flex justify-between">
-                <button
-                  type="button"
-                  onClick={prevStep}
-                  disabled={currentStep === 0}
-                  className={`inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
-                    currentStep === 0 ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  <ChevronLeft className="-ml-1 mr-2 h-5 w-5" />
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={nextStep}
-                  disabled={isSubmitting}
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting ? 'Processing...' : currentStep < steps.length - 1 ? 'Next' : 'Create Account'}
-                  {!isSubmitting && <ChevronRight className="ml-2 -mr-1 h-5 w-5" />}
-                </button>
-              </div>
-              
-              <div className="mt-6 bg-green-50 rounded-md p-4 flex items-center">
-                <Shield className="h-5 w-5 text-green-500 mr-2" />
-                <p className="text-sm text-green-700">
-                  <span className="font-semibold">Bank-level Security:</span> Your data is encrypted and protected with military-grade security.
-                </p>
-              </div>
-              
-              <div className="mt-6 text-center">
-                <p className="text-sm text-gray-600">
-                  Already have an account with Secure Cipher Bank?
-                </p>
-                <Link
-                  to="/login"
-                  className="mt-2 inline-block font-medium text-green-600 hover:text-green-500"
-                >
-                  Sign In to Your Account
-                </Link>
-              </div>
-            </div>
+          <div className="bg-gray-200 rounded-full h-2.5">
+            <div className="bg-green-600 h-2.5 rounded-full" style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}></div>
           </div>
         </div>
+
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {renderStep()}
+
+          {submissionError && (
+            <div className="flex items-center space-x-2 text-sm text-red-600 p-3 bg-red-50 rounded-md">
+              <AlertCircle className="h-5 w-5" />
+              <p>{submissionError}</p>
+            </div>
+          )}
+
+          <div className="flex justify-between items-center pt-6">
+            {currentStep > 0 ? (
+              <button
+                type="button"
+                onClick={handleBack}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                <ChevronLeft className="h-5 w-5 mr-2" />
+                Back
+              </button>
+            ) : <div />}
+
+            {currentStep < steps.length - 1 ? (
+              <button
+                type="button"
+                onClick={handleNext}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                Next
+                <ChevronRight className="h-5 w-5 ml-2" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="animate-spin h-5 w-5 mr-2" />
+                    Creating Account...
+                  </>
+                ) : (
+                  <>
+                    <Shield className="h-5 w-5 mr-2" />
+                    Complete Registration
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </form>
+        <p className="mt-4 text-center text-sm text-gray-600">
+          Already have an account?{' '}
+          <Link to="/login" className="font-medium text-green-600 hover:text-green-500">
+            Sign In
+          </Link>
+        </p>
       </div>
+    </div>
+  );
+}
+
+// --- Child Components for Steps ---
+
+function Step1({ formData, handleChange, errors }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <InputField name="first_name" label="First Name" value={formData.first_name} onChange={handleChange} error={errors.first_name} />
+      <InputField name="last_name" label="Last Name" value={formData.last_name} onChange={handleChange} error={errors.last_name} />
+      <InputField name="email" type="email" label="Email Address" value={formData.email} onChange={handleChange} error={errors.email} />
+      <InputField name="phone" label="Phone Number" value={formData.phone} onChange={handleChange} error={errors.phone} />
+      <InputField name="date_of_birth" type="date" label="Date of Birth" value={formData.date_of_birth} onChange={handleChange} error={errors.date_of_birth} isRequired={false} />
+      <InputField name="address" label="Residential Address" value={formData.address} onChange={handleChange} error={errors.address} isRequired={false} />
+      <InputField name="occupation" label="Occupation" value={formData.occupation} onChange={handleChange} error={errors.occupation} isRequired={false} />
+    </div>
+  );
+}
+
+function Step2({ formData, handleChange, errors }) {
+  return (
+    <div className="space-y-6">
+      <InputField name="username" label="Username" value={formData.username} onChange={handleChange} error={errors.username} />
+      <InputField name="pin" type="password" label="6-Digit Security PIN" value={formData.pin} onChange={handleChange} error={errors.pin} maxLength={6} />
+      <InputField name="confirm_pin" type="password" label="Confirm PIN" value={formData.confirm_pin} onChange={handleChange} error={errors.confirm_pin} maxLength={6} />
+    </div>
+  );
+}
+
+function Step3({ formData, handleChange, errors }) {
+  return (
+    <div className="space-y-6">
+      <InputField name="bvn" label="Bank Verification Number (BVN)" value={formData.bvn} onChange={handleChange} error={errors.bvn} maxLength={11} />
+      <InputField name="nin" label="National Identification Number (NIN)" value={formData.nin} onChange={handleChange} error={errors.nin} maxLength={11} />
+    </div>
+  );
+}
+
+function InputField({ name, label, type = 'text', value, onChange, error, isRequired = true, maxLength }) {
+  return (
+    <div>
+      <label htmlFor={name} className="block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <div className="mt-1">
+        <input
+          id={name}
+          name={name}
+          type={type}
+          required={isRequired}
+          value={value}
+          onChange={onChange}
+          maxLength={maxLength}
+          className={`appearance-none block w-full px-3 py-2 border ${error ? 'border-red-500' : 'border-gray-300'} rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
+        />
+      </div>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );
 }

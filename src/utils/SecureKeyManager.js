@@ -199,14 +199,45 @@ export const SecureTransactionHandler = {
         return JSON.parse(new TextDecoder().decode(decrypted));
     },
 
+    /**
+     * Creates a canonical (sorted, no whitespace) JSON string from an object.
+     * This is crucial for ensuring signatures match between client and server.
+     * @param {object} data - The object to stringify.
+     * @returns {string} - The canonical JSON string.
+     */
+    _getCanonicalJson(data) {
+        if (data === null || typeof data !== 'object') {
+            return JSON.stringify(data);
+        }
+        if (Array.isArray(data)) {
+            return `[${data.map(this._getCanonicalJson).join(',')}]`;
+        }
+        const keys = Object.keys(data).sort();
+        const pairs = keys.map(key => `"${key}":${this._getCanonicalJson(data[key])}`);
+        return `{${pairs.join(',')}}`;
+    },
+
     async signTransaction(transaction, privateKey) {
-        const sortedTx = JSON.stringify(transaction, Object.keys(transaction).sort());
+        // Use the canonical JSON string for signing to ensure consistency.
+        const canonicalJson = this._getCanonicalJson(transaction);
+        const data = new TextEncoder().encode(canonicalJson);
         const signature = await window.crypto.subtle.sign(
             { name: 'ECDSA', hash: { name: 'SHA-384' } },
             privateKey,
-            new TextEncoder().encode(sortedTx)
+            data
         );
         return toBase64(signature);
+    },
+
+    async signData(data, privateKey) {
+        const encodedData = new TextEncoder().encode(data);
+        const signature = await window.crypto.subtle.sign(
+            { name: 'ECDSA', hash: { name: 'SHA-384' } },
+            privateKey,
+            encodedData
+        );
+        // Return as hex for easier handling in Django if needed, though b64 is fine
+        return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
     },
 
     async importServerPublicKey(pem) {

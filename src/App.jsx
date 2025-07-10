@@ -32,12 +32,13 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Root redirect based on authentication */}
-      <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />} />
+      {/* Root redirect: send new users to register, authenticated users to dashboard */}
+      <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/register" />} />
       
       {/* Public routes */}
-      <Route path="/register" element={<Registration />} />
-      <Route path="/login" element={<SecureOnboardingForm />} />
+      {/* Onboarding/Registration is now the SecureOnboardingForm */}
+      <Route path="/register" element={<Registration />} /> 
+      <Route path="/login" element={<Login />} />
       <Route path="/pin-setup" element={<PINSetup />} />
       
       {/* Protected routes with Layout */}

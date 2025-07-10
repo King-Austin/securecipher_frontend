@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Check, AlertCircle } from 'lucide-react';
-import { SecureKeyManager } from '../utils/SecureKeyManager';
+import { Shield, Check, AlertCircle, Loader } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import secureApi from '../services/secureApi';
 
 export default function PINSetup() {
   const [pin, setPin] = useState('');
@@ -11,11 +11,11 @@ export default function PINSetup() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const navigate = useNavigate();
-  const { updatePublicKey, setPin: markPinSet } = useAuth();
+  const { markPinAsSet } = useAuth();
 
   const handlePinChange = (e) => {
     const value = e.target.value.replace(/[^0-9]/g, '');
-    if (value.length <= 6) {
+    if (value.length <= 4) {
       setPin(value);
       setError('');
     }
@@ -23,7 +23,7 @@ export default function PINSetup() {
 
   const handleConfirmPinChange = (e) => {
     const value = e.target.value.replace(/[^0-9]/g, '');
-    if (value.length <= 6) {
+    if (value.length <= 4) {
       setConfirmPin(value);
       setError('');
     }
@@ -32,8 +32,8 @@ export default function PINSetup() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (pin.length !== 6) {
-      setError('PIN must be 6 digits');
+    if (pin.length !== 4) {
+      setError('PIN must be 4 digits');
       return;
     }
     
@@ -42,37 +42,32 @@ export default function PINSetup() {
       return;
     }
     
+    setIsLoading(true);
+    setError('');
+    
     try {
-      setIsLoading(true);
-      
-      // Generate ECDSA key pair
-      const keyPair = await SecureKeyManager.generateKeyPair();
-      
-      // Export public key (to be sent to server)
-      const publicKeyBase64 = await SecureKeyManager.exportPublicKey(keyPair.publicKey);
-      
-      // Encrypt private key with PIN
-      const encryptedKey = await SecureKeyManager.encryptPrivateKey(keyPair.privateKey, pin);
-      
-      // Store encrypted key in IndexedDB
-      await SecureKeyManager.storeEncryptedKey(encryptedKey);
-      
-      // Send public key to server
-      await updatePublicKey(publicKeyBase64);
-      
-      // Mark that PIN has been set
-      await markPinSet();
-      
-      setIsSuccess(true);
-      
-      // Navigate to dashboard after 2 seconds
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 2000);
+      const response = await secureApi.post(
+        '/auth/set_pin/', // This is the target, not the full URL
+        { pin },
+        { target: 'set_pin' } // The target key for the middleware
+      );
+
+      if (response.message === 'Transaction PIN set successfully.') {
+        markPinAsSet();
+        setIsSuccess(true);
+        
+        // Navigate to dashboard after 2 seconds
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 2000);
+      } else {
+        throw new Error(response.error || 'Failed to set PIN.');
+      }
       
     } catch (err) {
-      console.error('Error during key setup:', err);
-      setError('An error occurred during setup. Please try again.');
+      console.error('Error setting PIN:', err);
+      const errorMessage = err.response?.data?.error || err.message || 'An error occurred during setup. Please try again.';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -87,7 +82,7 @@ export default function PINSetup() {
               Secure Your Account
             </h2>
             <p className="mt-2 text-sm text-gray-600">
-              Set up your 6-digit transaction PIN
+              Set up your 4-digit transaction PIN. This will be used to authorize all sensitive actions.
             </p>
           </div>
 
@@ -98,113 +93,87 @@ export default function PINSetup() {
                   <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
                     <Check className="h-6 w-6 text-green-600" />
                   </div>
-                  <h3 className="mt-3 text-lg font-medium text-gray-900">Setup complete!</h3>
-                  <p className="mt-2 text-sm text-gray-500">
-                    Your secure keys have been generated and encrypted.
-                  </p>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Redirecting to your dashboard...
+                  <h3 className="mt-4 text-lg font-medium text-gray-900">PIN Set Successfully!</h3>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Redirecting you to the dashboard...
                   </p>
                 </div>
               ) : (
-                <form className="space-y-6" onSubmit={handleSubmit}>
-                  <div className="flex justify-center">
-                    <div className="rounded-full bg-green-100 p-3">
-                      <Shield className="h-8 w-8 text-green-600" />
-                    </div>
-                  </div>
-                  
+                <form onSubmit={handleSubmit} className="space-y-6">
                   <div>
                     <label htmlFor="pin" className="block text-sm font-medium text-gray-700">
-                      Create 6-digit PIN
+                      New PIN
                     </label>
                     <div className="mt-1">
                       <input
                         id="pin"
                         name="pin"
                         type="password"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength="6"
-                        placeholder="******"
-                        required
+                        maxLength="4"
                         value={pin}
                         onChange={handlePinChange}
-                        className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                        required
+                        className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        placeholder="••••"
                       />
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      This PIN will be used to authorize transactions
-                    </p>
                   </div>
 
                   <div>
-                    <label htmlFor="confirmPin" className="block text-sm font-medium text-gray-700">
+                    <label htmlFor="confirm-pin" className="block text-sm font-medium text-gray-700">
                       Confirm PIN
                     </label>
                     <div className="mt-1">
                       <input
-                        id="confirmPin"
-                        name="confirmPin"
+                        id="confirm-pin"
+                        name="confirm-pin"
                         type="password"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength="6"
-                        placeholder="******"
-                        required
+                        maxLength="4"
                         value={confirmPin}
                         onChange={handleConfirmPinChange}
-                        className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                        required
+                        className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        placeholder="••••"
                       />
                     </div>
                   </div>
 
                   {error && (
-                    <div className="rounded-md bg-red-50 p-4">
-                      <div className="flex">
-                        <div className="flex-shrink-0">
-                          <AlertCircle className="h-5 w-5 text-red-400" />
-                        </div>
-                        <div className="ml-3">
-                          <h3 className="text-sm font-medium text-red-800">{error}</h3>
-                        </div>
-                      </div>
+                    <div className="flex items-center space-x-2 text-sm text-red-600">
+                      <AlertCircle className="h-5 w-5" />
+                      <span>{error}</span>
                     </div>
                   )}
-
-                  <div className="mt-4 bg-gray-50 p-3 rounded-md">
-                    <h4 className="text-sm font-medium text-gray-700">Your PIN will:</h4>
-                    <ul className="mt-2 text-xs text-gray-500 space-y-1">
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-green-500 mr-2" />
-                        Encrypt your private keys stored on this device
-                      </li>
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-green-500 mr-2" />
-                        Be required to authorize all transactions
-                      </li>
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-green-500 mr-2" />
-                        Never be stored on our servers
-                      </li>
-                    </ul>
-                  </div>
 
                   <div>
                     <button
                       type="submit"
-                      disabled={isLoading}
-                      className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
-                        isLoading ? 'opacity-75 cursor-not-allowed' : ''
-                      }`}
+                      disabled={isLoading || pin.length !== 4 || pin !== confirmPin}
+                      className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isLoading ? 'Setting up...' : 'Set PIN & Complete Setup'}
+                      {isLoading ? (
+                        <>
+                          <Loader className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" />
+                          Setting PIN...
+                        </>
+                      ) : (
+                        'Set Transaction PIN'
+                      )}
                     </button>
                   </div>
                 </form>
               )}
             </div>
           </div>
+        </div>
+      </div>
+      <div className="hidden lg:block relative w-0 flex-1 bg-indigo-700">
+        <div className="absolute inset-0 h-full w-full flex flex-col justify-center items-center text-white p-12">
+            <Shield size={64} className="mb-4 text-indigo-300"/>
+            <h2 className="text-3xl font-bold text-center">Your Security is Our Priority</h2>
+            <p className="mt-4 text-lg text-indigo-200 text-center">
+              Your transaction PIN adds a crucial layer of security, ensuring that only you can authorize payments and sensitive changes to your account.
+            </p>
         </div>
       </div>
     </div>
