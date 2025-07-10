@@ -174,8 +174,15 @@ export default function Registration() {
         }
       };
 
-      // 5. Send the data through the secure gateway
-      const response = await secureApi('register', registrationPayload);
+      // 5. Send the data through the secure gateway using the .post method
+      const response = await secureApi.post(
+        '/auth/register/', 
+        registrationPayload, 
+        { 
+          target: 'auth_register', 
+          keyPair: keyPair 
+        }
+      );
 
       console.log('Registration successful:', response);
       

@@ -1,5 +1,6 @@
 // AuthContext.js
 import { createContext, useState, useContext, useEffect } from 'react';
+import secureApi from '../services/secureApi'; // Import the secureApi service
 
 const AuthContext = createContext(null);
 
@@ -11,24 +12,15 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
   
   useEffect(() => {
-    // This effect checks for a refresh token to re-authenticate the user on page load
-    const reAuth = async () => {
-      const refreshToken = localStorage.getItem('refreshToken');
-      if (refreshToken) {
-        try {
-          // TODO: Implement token refresh logic here
-          // For now, we just mark as authenticated if a token exists
-          setIsAuthenticated(true); 
-        } catch (err) {
-          // If refresh fails, clear tokens
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-          setIsAuthenticated(false);
-        }
+    // This effect checks for a refresh token to determine initial auth state
+    const checkAuthStatus = () => {
+      const token = localStorage.getItem('refreshToken');
+      if (token) {
+        setIsAuthenticated(true);
       }
       setLoading(false);
     };
-    reAuth();
+    checkAuthStatus();
   }, []);
   
   useEffect(() => {
@@ -52,11 +44,12 @@ export const AuthProvider = ({ children }) => {
   };
   
   const logout = () => {
-    // Clear everything on logout
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('pinIsSet'); // Clear PIN status on logout
-    setUnlockedKeyPair(null); // Clear the in-memory key
+    // Use the logout function from secureApi which handles clearing local storage
+    // and redirecting.
+    secureApi.logout(); 
+    
+    // Also update local context state
+    setUnlockedKeyPair(null);
     setIsAuthenticated(false);
     setPinIsSet(false);
     setError(null);
