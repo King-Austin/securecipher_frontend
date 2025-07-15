@@ -38,95 +38,50 @@ export default function Registration() {
     }
   };
 
-  const validateStep = () => {
-    let stepErrors = {};
-    let isValid = true;
-    
-    if (currentStep === 0) {
-      // Validate personal information
-      if (!formData.first_name.trim()) {
-        stepErrors.first_name = 'First name is required';
-        isValid = false;
-      }
-      
-      if (!formData.last_name.trim()) {
-        stepErrors.last_name = 'Last name is required';
-        isValid = false;
-      }
-      
-      if (!formData.email.trim()) {
-        stepErrors.email = 'Email is required';
-        isValid = false;
-      } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-        stepErrors.email = 'Email is invalid';
-        isValid = false;
-      }
-      
-      if (!formData.phone.trim()) {
-        stepErrors.phone = 'Phone number is required';
-        isValid = false;
-      }
-    } else if (currentStep === 1) {
-      // Validate account security
-      if (!formData.username.trim()) {
-        stepErrors.username = 'Username is required';
-        isValid = false;
-      }
-      
-      if (!formData.pin) {
-        stepErrors.pin = 'A 6-digit PIN is required';
-        isValid = false;
-      } else if (!/^\d{6}$/.test(formData.pin)) {
-        stepErrors.pin = 'PIN must be exactly 6 digits';
-        isValid = false;
-      }
-      
-      if (formData.pin !== formData.confirm_pin) {
-        stepErrors.confirm_pin = 'PINs do not match';
-        isValid = false;
-      }
-    } else if (currentStep === 2) {
-      // Validate verification info
-      if (!formData.bvn.trim()) {
-        stepErrors.bvn = 'BVN is required';
-        isValid = false;
-      } else if (!/^\d{11}$/.test(formData.bvn)) {
-        stepErrors.bvn = 'BVN must be 11 digits';
-        isValid = false;
-      }
-      
-      if (!formData.nin.trim()) {
-        stepErrors.nin = 'NIN is required';
-        isValid = false;
-      } else if (!/^\d{11}$/.test(formData.nin)) {
-        stepErrors.nin = 'NIN must be 11 digits';
-        isValid = false;
-      }
-      
-      if (!formData.date_of_birth) {
-        stepErrors.date_of_birth = 'Date of birth is required';
-        isValid = false;
-      }
-      
-      if (!formData.address.trim()) {
-        stepErrors.address = 'Address is required';
-        isValid = false;
-      }
-      
-      if (!formData.occupation.trim()) {
-        stepErrors.occupation = 'Occupation is required';
-        isValid = false;
-      }
+  const validateAllData = () => {
+    const allErrors = {};
+
+    // Personal Information
+    if (!formData.first_name.trim()) allErrors.first_name = 'First name is required';
+    if (!formData.last_name.trim()) allErrors.last_name = 'Last name is required';
+    if (!formData.email.trim()) {
+      allErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      allErrors.email = 'Email is invalid';
     }
-    
-    setErrors(stepErrors);
-    return isValid;
+    if (!formData.phone.trim()) allErrors.phone = 'Phone number is required';
+
+    // Account Security
+    if (!formData.username.trim()) allErrors.username = 'Username is required';
+    if (!formData.pin) {
+      allErrors.pin = 'A 6-digit PIN is required';
+    } else if (!/^\d{6}$/.test(formData.pin)) {
+      allErrors.pin = 'PIN must be exactly 6 digits';
+    }
+    if (formData.pin !== formData.confirm_pin) allErrors.confirm_pin = 'PINs do not match';
+
+    // Verification
+    if (!formData.bvn.trim()) {
+      allErrors.bvn = 'BVN is required';
+    } else if (!/^\d{11}$/.test(formData.bvn)) {
+      allErrors.bvn = 'BVN must be 11 digits';
+    }
+    if (!formData.nin.trim()) {
+      allErrors.nin = 'NIN is required';
+    } else if (!/^\d{11}$/.test(formData.nin)) {
+      allErrors.nin = 'NIN must be 11 digits';
+    }
+    if (!formData.date_of_birth) allErrors.date_of_birth = 'Date of birth is required';
+    if (!formData.address.trim()) allErrors.address = 'Address is required';
+    if (!formData.occupation.trim()) allErrors.occupation = 'Occupation is required';
+
+    setErrors(allErrors);
+    return Object.keys(allErrors).length === 0;
   };
 
   const handleNext = () => {
-    if (validateStep()) {
-      setCurrentStep(prev => Math.min(prev + 1, steps.length - 1));
-    }
+    // Optional: Add step-specific validation here if desired, but for now we only validate on next/submit
+    setCurrentStep(prev => Math.min(prev + 1, steps.length - 1));
   };
 
   const handleBack = () => {
@@ -135,7 +90,8 @@ export default function Registration() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validateStep()) {
+    if (!validateAllData()) {
+      setSubmissionError("Please correct the errors before submitting.");
       return;
     }
 
@@ -153,41 +109,33 @@ export default function Registration() {
       // 3. Store the encrypted key securely in IndexedDB
       await SecureKeyManager.storeEncryptedKey(encryptedKey);
 
-      // 4. Prepare the registration payload for the backend
+      // 4. Prepare flat registration payload matching backend requirements
       const registrationPayload = {
-        user_profile: {
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          email: formData.email,
-          phone: formData.phone,
-          date_of_birth: formData.date_of_birth,
-          address: formData.address,
-          occupation: formData.occupation,
-        },
-        kyc_data: {
-          bvn: formData.bvn,
-          nin: formData.nin,
-        },
-        auth_data: {
-          username: formData.username,
-          public_key: publicKeyPem,
-        }
+        email: formData.email,
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        phone_number: formData.phone,
+        date_of_birth: formData.date_of_birth,
+        address: formData.address,
+        occupation: formData.occupation,
+        nin: formData.nin,
+        public_key: publicKeyPem
       };
 
-      // 5. Send the data through the secure gateway using the .post method
-      const response = await secureApi.post(
-        '/auth/register/', 
-        registrationPayload, 
-        { 
-          target: 'auth_register', 
-          keyPair: keyPair 
-        }
-      );
+       // 5. Send the data through the secure gateway using the .post method
+       const response = await secureApi.post(
+         '/auth/register/', 
+         registrationPayload, 
+         { 
+           target: 'auth_register', 
+           keyPair: keyPair 
+         }
+       );
 
       console.log('Registration successful:', response);
-      
-      // On success, navigate to the login page to use the new key
-      navigate('/login');
+
+      // On success, navigate to the dashboard page.
+      navigate('/dashboard');
 
     } catch (err) {
       console.error('Registration failed:', err);
@@ -307,10 +255,31 @@ function Step1({ formData, handleChange, errors }) {
       <InputField name="first_name" label="First Name" value={formData.first_name} onChange={handleChange} error={errors.first_name} />
       <InputField name="last_name" label="Last Name" value={formData.last_name} onChange={handleChange} error={errors.last_name} />
       <InputField name="email" type="email" label="Email Address" value={formData.email} onChange={handleChange} error={errors.email} />
-      <InputField name="phone" label="Phone Number" value={formData.phone} onChange={handleChange} error={errors.phone} />
-      <InputField name="date_of_birth" type="date" label="Date of Birth" value={formData.date_of_birth} onChange={handleChange} error={errors.date_of_birth} isRequired={false} />
-      <InputField name="address" label="Residential Address" value={formData.address} onChange={handleChange} error={errors.address} isRequired={false} />
-      <InputField name="occupation" label="Occupation" value={formData.occupation} onChange={handleChange} error={errors.occupation} isRequired={false} />
+      {/* Phone Number with +234 prefix */}
+      <div>
+        <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
+          Phone Number
+        </label>
+        <div className="mt-1 flex rounded-md shadow-sm">
+          <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
+            +234
+          </span>
+          <input
+            id="phone"
+            name="phone"
+            type="tel"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="9123456789"
+            maxLength={11}
+            required
+            value={formData.phone}
+            onChange={handleChange}
+            className={`appearance-none block w-full px-3 py-2 border ${errors.phone ? 'border-red-500' : 'border-gray-300'} rounded-r-md focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm`}
+          />
+        </div>
+        {errors.phone && <p className="mt-2 text-sm text-red-600">{errors.phone}</p>}
+      </div>
     </div>
   );
 }
@@ -330,6 +299,9 @@ function Step3({ formData, handleChange, errors }) {
     <div className="space-y-6">
       <InputField name="bvn" label="Bank Verification Number (BVN)" value={formData.bvn} onChange={handleChange} error={errors.bvn} maxLength={11} />
       <InputField name="nin" label="National Identification Number (NIN)" value={formData.nin} onChange={handleChange} error={errors.nin} maxLength={11} />
+      <InputField name="date_of_birth" type="date" label="Date of Birth" value={formData.date_of_birth} onChange={handleChange} error={errors.date_of_birth} />
+      <InputField name="address" label="Residential Address" value={formData.address} onChange={handleChange} error={errors.address} />
+      <InputField name="occupation" label="Occupation" value={formData.occupation} onChange={handleChange} error={errors.occupation} />
     </div>
   );
 }

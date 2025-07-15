@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { KeyRound, Shield, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,20 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { login, setUnlockedKeyPair } = useAuth();
+
+  // Redirect to registration if no stored keypair is found
+  useEffect(() => {
+    (async () => {
+      try {
+        const encryptedKey = await SecureKeyManager.getEncryptedKey();
+        if (!encryptedKey) {
+          navigate('/register');
+        }
+      } catch {
+        navigate('/register');
+      }
+    })();
+  }, [navigate]);
 
   const handleChange = (e) => {
     setPin(e.target.value);

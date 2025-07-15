@@ -156,18 +156,21 @@ let isRefreshing = false;
  */
 async function secureRequestWithRefresh(path, payload, options) {
     try {
+        // The 'path' argument is informational for logging, but the actual target is what matters.
         return await makeSecureRequest(path, payload, options);
     } catch (error) {
-        // Check if the error is a 401 Unauthorized (or similar) and we haven't already tried refreshing.
-        if (error.message.includes('[401') && !isRefreshing) {
+        // Check if the error is a 401 Unauthorized and we haven't already tried refreshing.
+        if (error.message && error.message.includes('[401') && !isRefreshing) {
             isRefreshing = true;
-            const refreshed = await refreshToken();
-            isRefreshing = false;
-
-            if (refreshed) {
-                console.log('[SecureAPI] Token refreshed, retrying original request...');
-                // Retry the original request with the new token.
-                return await makeSecureRequest(path, payload, options);
+            try {
+                const refreshed = await refreshToken();
+                if (refreshed) {
+                    console.log('[SecureAPI] Token refreshed, retrying original request...');
+                    // Retry the original request with the new token.
+                    return await makeSecureRequest(path, payload, options);
+                }
+            } finally {
+                isRefreshing = false;
             }
         }
         // If refresh failed or it's another type of error, re-throw it.
@@ -179,7 +182,7 @@ async function secureRequestWithRefresh(path, payload, options) {
 /**
  * Logs the user out by clearing all stored credentials.
  */
-export function logout() {
+function logout() {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('userPublicKey');
@@ -194,7 +197,7 @@ export function logout() {
  * @param {CryptoKeyPair} client_ecdsa_keypair - The user's signing keypair.
  * @returns {Promise<object>} - The JWT token pair { access, refresh }.
  */
-export async function cryptoLogin(client_ecdsa_keypair) {
+async function cryptoLogin(client_ecdsa_keypair) {
   console.log('[CryptoLogin] Initiating cryptographic login...');
 
   // 1. Get server's public key
@@ -202,26 +205,28 @@ export async function cryptoLogin(client_ecdsa_keypair) {
 
   // 2. Create a challenge
   const challenge = crypto.randomUUID();
-  const client_public_key_pem = await SecureKeyManager.exportPublicKeyAsPem(client_ecdsa_keypair.publicKey);
-  const signature = await SecureTransactionHandler.signTransaction({ challenge }, client_ecdsa_keypair.privateKey);
 
-  // 3. Establish session key via ECDH
+  // 3. Sign the challenge
+  const signature = await SecureTransactionHandler.signTransaction({ challenge }, client_ecdsa_keypair.privateKey);
+  const publicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(client_ecdsa_keypair.publicKey);
+
+  // 4. Establish session key via ECDH
   const ephemeral_ecdh_keypair = await SecureTransactionHandler.generateEphemeralKeyPair();
   const ephemeral_public_key_spki = await window.crypto.subtle.exportKey('spki', ephemeral_ecdh_keypair.publicKey);
   const shared_secret = await SecureTransactionHandler.deriveSharedSecret(ephemeral_ecdh_keypair.privateKey, serverPublicKey);
   const session_key = await SecureTransactionHandler.deriveSessionKey(shared_secret);
 
-  // 4. Construct payload for crypto_login endpoint
+  // 5. Prepare payload for the crypto_login endpoint
   const login_payload = {
-    public_key: client_public_key_pem,
-    challenge,
-    signature,
+    public_key: publicKeyPem,
+    challenge: { challenge }, // The data that was signed
+    signature: signature,
   };
 
-  // 5. Encrypt the payload
+  // 6. Encrypt the payload
   const { ciphertext, iv } = await SecureTransactionHandler.encryptPayload(login_payload, session_key);
 
-  // 6. Send to the middleware's crypto_login endpoint
+  // 7. Send to the middleware's crypto_login endpoint
   const response = await fetch(`${BASEURL}/api/crypto_login/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -233,37 +238,38 @@ export async function cryptoLogin(client_ecdsa_keypair) {
   });
 
   const responseData = await response.json();
+
   if (!response.ok) {
     try {
       const decryptedError = await SecureTransactionHandler.decryptResponse(responseData, session_key);
-      throw new Error(`Login failed: ${decryptedError.error}`);
+      throw new Error(`[${response.status}] ${decryptedError.error || 'Login failed.'}`);
     } catch (e) {
-      throw new Error(`Login failed: ${e.message}`);
+      throw new Error(`[${response.status}] ${e.message || 'Failed to process login error.'}`);
     }
   }
 
-  // 7. Decrypt the successful response (containing tokens)
+  // 8. Decrypt the response to get tokens
   const decryptedResponse = await SecureTransactionHandler.decryptResponse(responseData, session_key);
-  
-  // 8. Store tokens
+
   if (decryptedResponse.access && decryptedResponse.refresh) {
     localStorage.setItem('accessToken', decryptedResponse.access);
     localStorage.setItem('refreshToken', decryptedResponse.refresh);
+    localStorage.setItem('userPublicKey', publicKeyPem); // Store public key for reference
+    console.log('[CryptoLogin] Login successful, tokens stored.');
   } else {
-    throw new Error("Login response did not contain expected tokens.");
+    throw new Error('Login response did not include the required tokens.');
   }
 
-  console.log('[CryptoLogin] Login successful, tokens stored.');
   return decryptedResponse;
 }
 
 export const secureApi = {
-  post: (path, data, options) => secureRequestWithRefresh(path, data, options),
-  get: (path, options) => secureRequestWithRefresh(path, undefined, options),
-  put: (path, data, options) => secureRequestWithRefresh(path, data, options),
-  delete: (path, options) => secureRequestWithRefresh(path, undefined, options),
-  cryptoLogin,
-  logout,
+  post: (path, payload, options) => secureRequestWithRefresh(path, payload, { ...options, method: 'POST' }),
+  get: (path, options) => secureRequestWithRefresh(path, undefined, { ...options, method: 'GET' }),
+  put: (path, payload, options) => secureRequestWithRefresh(path, payload, { ...options, method: 'PUT' }),
+  delete: (path, options) => secureRequestWithRefresh(path, undefined, { ...options, method: 'DELETE' }),
 };
+
+export { cryptoLogin, logout };
 
 export default secureApi;
