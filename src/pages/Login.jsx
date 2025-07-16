@@ -3,14 +3,13 @@ import { useNavigate, Link } from 'react-router-dom';
 import { KeyRound, Shield, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { SecureKeyManager } from '../utils/SecureKeyManager';
-import { cryptoLogin } from '../services/secureApi';
 
 export default function Login() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { login, setUnlockedKeyPair } = useAuth();
+  const { login } = useAuth();
 
   // Redirect to registration if no stored keypair is found
   useEffect(() => {
@@ -42,52 +41,15 @@ export default function Login() {
     try {
       setIsLoading(true);
       
-      // 1. Decrypt the user's private key with the PIN
-      const encryptedKey = await SecureKeyManager.getEncryptedKey();
-      if (!encryptedKey) {
-        throw new Error("No key found. Please register first.");
+      // Use the AuthContext login method which handles all cryptographic authentication
+      const success = await login(pin);
+      
+      if (success) {
+        // Navigate to dashboard on success
+        navigate('/dashboard');
+      } else {
+        setError('Login failed. Please check your PIN and try again.');
       }
-      
-      // Decrypt the private key from IndexedDB
-      const privateKey = await SecureKeyManager.decryptPrivateKey(
-        encryptedKey.encrypted,
-        pin,
-        encryptedKey.salt,
-        encryptedKey.iv
-      );
-
-      // Reconstruct the full key pair
-      const publicKey = await window.crypto.subtle.importKey(
-        'pkcs8',
-        await SecureKeyManager.exportPrivateKey(privateKey),
-        { name: 'ECDSA', namedCurve: 'P-384' },
-        true,
-        ['sign']
-      ).then(key => window.crypto.subtle.exportKey('spki', key.publicKey));
-
-
-      const keyPair = {
-          privateKey,
-          publicKey: await window.crypto.subtle.importKey(
-              'spki',
-              publicKey,
-              { name: 'ECDSA', namedCurve: 'P-384' },
-              true,
-              ['verify']
-          )
-      };
-
-      // Store the unlocked key pair in the AuthContext for this session
-      setUnlockedKeyPair(keyPair);
-
-      // Perform cryptographic login to get JWTs
-      const tokens = await cryptoLogin(keyPair);
-      
-      // Set the auth state with the new tokens
-      login(tokens.access, tokens.refresh);
-      
-      // Navigate to dashboard on success
-      navigate('/dashboard');
 
     } catch (err) {
       console.error('Error during login:', err);

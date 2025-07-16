@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { secureApi } from '../services/secureApi';
+import { useAuth } from '../context/AuthContext';
 
 export default function SecureOnboardingForm() {
   const [status, setStatus] = useState(null);
@@ -17,7 +18,7 @@ export default function SecureOnboardingForm() {
         phone: "1234567890"
       };
 
-      const response = await secureApi('register', user_transaction_data);
+      const response = await secureApi.post('register', user_transaction_data);
       
       setDecryptedResponseObject(response);
       setStatus(`✅ Request to 'register' was successful!`);

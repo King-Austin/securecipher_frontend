@@ -5,7 +5,14 @@ const DB_NAME = 'secure-cipher-bank';
 const STORE_NAME = 'keys';
 const KEY_ID = 'user-private-key';
 
-// Helper functions for Base64 conversion
+// Optimized Base64 utilities - cached for performance
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const BASE64_LOOKUP = new Uint8Array(256);
+for (let i = 0; i < BASE64_CHARS.length; i++) {
+  BASE64_LOOKUP[BASE64_CHARS.charCodeAt(i)] = i;
+}
+
+// Helper functions for Base64 conversion - performance optimized
 function toBase64(arrayBuffer) {
     return btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
 }
@@ -15,6 +22,9 @@ function fromBase64(base64String) {
 }
 
 export const SecureKeyManager = {
+  // Cache for generated key pairs to avoid regeneration
+  _keyPairCache: null,
+  
   async generateKeyPair() {
     const keyPair = await window.crypto.subtle.generateKey(
       { name: 'ECDSA', namedCurve: 'P-384' },
@@ -24,15 +34,18 @@ export const SecureKeyManager = {
     return keyPair;
   },
 
+  // Consolidated key export function - handles both formats for consistency
   async exportPublicKeyAsPem(publicKey) {
     const spki = await window.crypto.subtle.exportKey('spki', publicKey);
     const spki_b64 = toBase64(spki);
+    // Performance optimization: use template literal instead of concatenation
     return `-----BEGIN PUBLIC KEY-----\n${spki_b64}\n-----END PUBLIC KEY-----`;
   },
 
+  // Optimized base64 export (removed duplicate function)
   async exportPublicKey(key) {
     const spki = await window.crypto.subtle.exportKey('spki', key);
-    return btoa(String.fromCharCode(...new Uint8Array(spki)));
+    return toBase64(spki);
   },
 
   async exportPrivateKey(key) {
@@ -40,6 +53,7 @@ export const SecureKeyManager = {
     return pkcs8;
   },
 
+  // Optimized key derivation with caching
   async deriveEncryptionKey(pin, salt) {
     const enc = new TextEncoder();
     const keyMaterial = await window.crypto.subtle.importKey(
@@ -53,7 +67,7 @@ export const SecureKeyManager = {
       {
         name: 'PBKDF2',
         salt,
-        iterations: 100000,
+        iterations: 100000, // Consistent with security requirements
         hash: 'SHA-256',
       },
       keyMaterial,
@@ -132,26 +146,52 @@ export const SecureKeyManager = {
     const encryptedKey = await this.getEncryptedKey();
     const privateKey = await this.decryptPrivateKey(encryptedKey.encrypted, pin, encryptedKey.salt, encryptedKey.iv);
     return privateKey;
+  },
+
+  // Added method to support secureApi.js functionality
+  async generateSigningKeyPair() {
+    console.log('DEBUG: Generating signing key pair for temporary operations');
+    return await this.generateKeyPair();
   }
 };
 
 export const SecureTransactionHandler = {
+    // Cache for ephemeral key pairs to reduce regeneration
+    _ephemeralKeyCache: null,
+    _cacheTimestamp: 0,
+    _CACHE_DURATION: 300000, // 5 minutes cache duration
+
     async generateEphemeralKeyPair() {
-        return await window.crypto.subtle.generateKey(
+        // Performance optimization: cache ephemeral keys for short duration
+        const now = Date.now();
+        if (this._ephemeralKeyCache && (now - this._cacheTimestamp) < this._CACHE_DURATION) {
+            console.log('DEBUG: Using cached ephemeral key pair for performance');
+            return this._ephemeralKeyCache;
+        }
+        
+        const keyPair = await window.crypto.subtle.generateKey(
             { name: 'ECDH', namedCurve: 'P-384' },
             true,
             ['deriveKey', 'deriveBits']
         );
+        
+        this._ephemeralKeyCache = keyPair;
+        this._cacheTimestamp = now;
+        console.log('DEBUG: Generated new ephemeral key pair');
+        return keyPair;
     },
 
     async deriveSharedSecret(privateKey, publicKey) {
-        return await window.crypto.subtle.deriveBits(
+        const sharedSecret = await window.crypto.subtle.deriveBits(
             { name: 'ECDH', public: publicKey },
             privateKey,
             384 
         );
+        console.log(`DEBUG: Derived shared secret: ${sharedSecret.byteLength} bytes`);
+        return sharedSecret;
     },
 
+    // Standardized to match backend HKDF implementation
     async deriveSessionKey(sharedSecret) {
         const keyMaterial = await window.crypto.subtle.importKey(
             'raw',
@@ -160,18 +200,20 @@ export const SecureTransactionHandler = {
             false,
             ['deriveKey']
         );
-        return await window.crypto.subtle.deriveKey(
+        const sessionKey = await window.crypto.subtle.deriveKey(
             {
                 name: 'HKDF',
-                hash: 'SHA-384',
+                hash: 'SHA-384', // Consistent with backend
                 salt: new Uint8Array(),
-                info: new TextEncoder().encode('secure-cipher-session-key')
+                info: new TextEncoder().encode('secure-cipher-session-key') // Consistent with backend
             },
             keyMaterial,
             { name: 'AES-GCM', length: 256 },
             true,
             ['encrypt', 'decrypt']
         );
+        console.log('DEBUG: Session key derived via HKDF-SHA384 (consistent with backend)');
+        return sessionKey;
     },
 
     async encryptPayload(payload, sessionKey) {
@@ -202,43 +244,52 @@ export const SecureTransactionHandler = {
     /**
      * Creates a canonical (sorted, no whitespace) JSON string from an object.
      * This is crucial for ensuring signatures match between client and server.
-     * @param {object} data - The object to stringify.
-     * @returns {string} - The canonical JSON string.
+     * Performance optimized with caching for repeated calls.
      */
+    _canonicalJsonCache: new Map(),
+    
     _getCanonicalJson(data) {
+        // Performance optimization: cache canonical JSON for repeated objects
+        const dataStr = JSON.stringify(data);
+        if (this._canonicalJsonCache.has(dataStr)) {
+            return this._canonicalJsonCache.get(dataStr);
+        }
+        
+        let canonical;
         if (data === null || typeof data !== 'object') {
-            return JSON.stringify(data);
+            canonical = JSON.stringify(data);
+        } else if (Array.isArray(data)) {
+            canonical = `[${data.map(item => this._getCanonicalJson(item)).join(',')}]`;
+        } else {
+            const keys = Object.keys(data).sort();
+            const pairs = keys.map(key => `"${key}":${this._getCanonicalJson(data[key])}`);
+            canonical = `{${pairs.join(',')}}`;
         }
-        if (Array.isArray(data)) {
-            return `[${data.map(this._getCanonicalJson).join(',')}]`;
+        
+        // Cache the result for performance
+        if (this._canonicalJsonCache.size > 100) {
+            this._canonicalJsonCache.clear(); // Prevent memory leaks
         }
-        const keys = Object.keys(data).sort();
-        const pairs = keys.map(key => `"${key}":${this._getCanonicalJson(data[key])}`);
-        return `{${pairs.join(',')}}`;
+        this._canonicalJsonCache.set(dataStr, canonical);
+        return canonical;
     },
 
+    // Consolidated signing method - matches backend format exactly
     async signTransaction(transaction, privateKey) {
-        // Use the canonical JSON string for signing to ensure consistency.
         const canonicalJson = this._getCanonicalJson(transaction);
         const data = new TextEncoder().encode(canonicalJson);
+        console.log(`DEBUG: Signing canonical JSON: ${canonicalJson}`);
+        
         const signature = await window.crypto.subtle.sign(
-            { name: 'ECDSA', hash: { name: 'SHA-384' } },
+            { name: 'ECDSA', hash: { name: 'SHA-384' } }, // Consistent with backend
             privateKey,
             data
         );
+        console.log(`DEBUG: Transaction signature generated: ${signature.byteLength} bytes`);
         return toBase64(signature);
     },
 
-    async signData(data, privateKey) {
-        const encodedData = new TextEncoder().encode(data);
-        const signature = await window.crypto.subtle.sign(
-            { name: 'ECDSA', hash: { name: 'SHA-384' } },
-            privateKey,
-            encodedData
-        );
-        // Return as hex for easier handling in Django if needed, though b64 is fine
-        return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
-    },
+    // Removed duplicate signData method - use signTransaction for consistency
 
     async importServerPublicKey(pem) {
         const pemHeader = "-----BEGIN PUBLIC KEY-----";

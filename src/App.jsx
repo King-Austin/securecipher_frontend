@@ -36,10 +36,16 @@ function AppRoutes() {
       <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/register" />} />
       
       {/* Public routes */}
-      {/* Onboarding/Registration is now the SecureOnboardingForm */}
       <Route path="/register" element={<Registration />} /> 
       <Route path="/login" element={<Login />} />
       <Route path="/pin-setup" element={<PINSetup />} />
+      
+      {/* Demo route - accessible to everyone */}
+      <Route path="/demo" element={
+        <Layout>
+          <SecureOnboardingForm />
+        </Layout>
+      } />
       
       {/* Protected routes with Layout */}
       <Route element={<ProtectedRoute />}>
