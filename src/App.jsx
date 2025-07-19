@@ -29,7 +29,6 @@ import SecureOnboardingForm from './components/SecureOnBoardingForm';
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
-
   return (
     <Routes>
       {/* Root redirect: send new users to register, authenticated users to dashboard */}
@@ -48,7 +47,6 @@ function AppRoutes() {
       } />
       
       {/* Protected routes with Layout */}
-      <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={
           <Layout>
             <Dashboard />
@@ -87,7 +85,6 @@ function AppRoutes() {
             </div>
           </Layout>
         } />
-      </Route>
       
       {/* Error routes */}
       <Route path="/server-error" element={<ServerError />} />

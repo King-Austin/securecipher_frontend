@@ -2,8 +2,23 @@ import { useState, useEffect } from 'react';
 import { ArrowRight, Building, AlertCircle, Check, Loader, Shield } from 'lucide-react';
 import secureApi from '../services/secureApi';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+
 
 export default function SendMoney() {
+
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hasKeys =
+      localStorage.getItem('pinIsSet');
+    if (!hasKeys) {
+      navigate('/register', { replace: true });
+    }
+  }, [navigate]);
+
+
+
   const [step, setStep] = useState(1);
   const [transactionData, setTransactionData] = useState({
     to_account: '',

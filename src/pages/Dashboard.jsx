@@ -2,8 +2,22 @@ import AccountSummary from '../components/dashboard/AccountSummary';
 import QuickActions from '../components/dashboard/QuickActions';
 import RecentTransactions from '../components/dashboard/RecentTransactions';
 import SpendingInsights from '../components/dashboard/SpendingInsights';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hasKeys =
+      localStorage.getItem('userPublicKey') &&
+      localStorage.getItem('encryptedPrivateKey');
+    if (!hasKeys) {
+      navigate('/register', { replace: true });
+    }
+  }, [navigate]);
+
+
   return (
     <div>
       <h1 className="text-2xl font-semibold text-gray-800">Dashboard</h1>

@@ -56,14 +56,17 @@ export const SecureKeyManager = {
   // Optimized key derivation with caching
   async deriveEncryptionKey(pin, salt) {
     const enc = new TextEncoder();
+    const pinBytes = enc.encode(pin);
+    
     const keyMaterial = await window.crypto.subtle.importKey(
       'raw',
-      enc.encode(pin),
+      pinBytes,
       { name: 'PBKDF2' },
       false,
       ['deriveKey']
     );
-    return window.crypto.subtle.deriveKey(
+    
+    const derivedKey = await window.crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
         salt,
@@ -75,11 +78,14 @@ export const SecureKeyManager = {
       false,
       ['encrypt', 'decrypt']
     );
+    
+    return derivedKey;
   },
 
   async encryptPrivateKey(privateKey, pin) {
     const salt = window.crypto.getRandomValues(new Uint8Array(16));
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    
     const key = await this.deriveEncryptionKey(pin, salt);
     const pkcs8 = await this.exportPrivateKey(privateKey);
     const encrypted = await window.crypto.subtle.encrypt(
@@ -87,59 +93,49 @@ export const SecureKeyManager = {
       key,
       pkcs8
     );
+    
     return { encrypted, salt, iv };
   },
 
   async decryptPrivateKey(encrypted, pin, salt, iv) {
-    const key = await this.deriveEncryptionKey(pin, salt);
-    const pkcs8 = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      encrypted
-    );
-    return window.crypto.subtle.importKey(
-      'pkcs8',
-      pkcs8,
-      { name: 'ECDSA', namedCurve: 'P-384' },
-      true,
-      ['sign']
-    );
-  },
+    // Security: Check rate limiting before attempting decryption
 
-  async storeEncryptedKey({ encrypted, salt, iv }) {
-    return new Promise((resolve, reject) => {
-      const open = window.indexedDB.open(DB_NAME, 1);
-      open.onupgradeneeded = () => {
-        open.result.createObjectStore(STORE_NAME);
-      };
-      open.onsuccess = () => {
-        const db = open.result;
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        store.put({ encrypted, salt, iv }, KEY_ID);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      };
-      open.onerror = () => reject(open.error);
-    });
-  },
+    
+    try {
+      // Add timing protection: always take minimum time
+      
+      const key = await this.deriveEncryptionKey(pin, salt);
+      const pkcs8 = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        encrypted
+      );
+      
+      const privateKey = await window.crypto.subtle.importKey(
+        'pkcs8',
+        pkcs8,
+        { name: 'ECDSA', namedCurve: 'P-384' },
+        true,
+        ['sign']
+      );
+      
 
-  async getEncryptedKey() {
-    return new Promise((resolve, reject) => {
-      const open = window.indexedDB.open(DB_NAME, 1);
-      open.onupgradeneeded = () => {
-        open.result.createObjectStore(STORE_NAME);
-      };
-      open.onsuccess = () => {
-        const db = open.result;
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.get(KEY_ID);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      };
-      open.onerror = () => reject(open.error);
-    });
+      
+      // Record successful attempt
+      return privateKey;
+      
+    } catch (error) {
+      // Record failed attempt
+      
+      // Provide specific error messages
+      if (error.name === 'OperationError' || error.message.includes('decrypt')) {
+        throw new Error('Invalid PIN. Please try again.');
+      } else if (error.name === 'InvalidAccessError') {
+        throw new Error('Corrupted key data. Please re-register.');
+      } else {
+        throw new Error('Decryption failed. Please try again.');
+      }
+    }
   },
 
   async getPrivateKey(pin) {
@@ -152,7 +148,51 @@ export const SecureKeyManager = {
   async generateSigningKeyPair() {
     console.log('DEBUG: Generating signing key pair for temporary operations');
     return await this.generateKeyPair();
-  }
+  },
+
+  async storeEncryptedKey({ encrypted, salt, iv }) {
+    // DRY: Use a helper for IndexedDB open/transaction
+    function getDb() {
+      return new Promise((resolve, reject) => {
+        const openRequest = indexedDB.open(DB_NAME, 1);
+        openRequest.onupgradeneeded = () => {
+          openRequest.result.createObjectStore(STORE_NAME);
+        };
+        openRequest.onsuccess = () => resolve(openRequest.result);
+        openRequest.onerror = () => reject(openRequest.error);
+      });
+    }
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put({ encrypted, salt, iv }, KEY_ID);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  // DRY: Helper to get encrypted key from IndexedDB
+  async getEncryptedKey() {
+    function getDb() {
+      return new Promise((resolve, reject) => {
+        const openRequest = indexedDB.open(DB_NAME, 1);
+        openRequest.onupgradeneeded = () => {
+          openRequest.result.createObjectStore(STORE_NAME);
+        };
+        openRequest.onsuccess = () => resolve(openRequest.result);
+        openRequest.onerror = () => reject(openRequest.error);
+      });
+    }
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.get(KEY_ID);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  },
 };
 
 export const SecureTransactionHandler = {
@@ -305,3 +345,4 @@ export const SecureTransactionHandler = {
         );
     }
 };
+

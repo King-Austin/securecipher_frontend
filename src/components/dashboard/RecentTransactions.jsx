@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowUpRight, ArrowDownLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import api from '../../services/api';
+import { secureApi } from '../../services/secureApi';
 
 export default function RecentTransactions() {
   const [transactions, setTransactions] = useState([]);
@@ -16,7 +16,12 @@ export default function RecentTransactions() {
   const fetchTransactions = async () => {
     try {
       setLoading(true);
-      const data = await api.transaction.getTransactions();
+      // Use secureApi to forward to middleware with target for banking API
+      const data = await secureApi.post(
+        '/transactions/',
+        {},
+        { target: 'transactions_list' }
+      );
       // Sort by date (newest first) and limit to 5
       const sortedTransactions = data
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))

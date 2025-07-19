@@ -102,6 +102,9 @@ export default function Registration() {
       // 1. Generate cryptographic key pair
       const keyPair = await SecureKeyManager.generateKeyPair();
       const publicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(keyPair.publicKey);
+      console.log('Generated key pair:', keyPair);
+      console.log('Public key PEM:', publicKeyPem);
+      // 2. Store the public key securely
 
       // 2. Encrypt the private key with the user's PIN
       const encryptedKey = await SecureKeyManager.encryptPrivateKey(keyPair.privateKey, formData.pin);
@@ -121,25 +124,30 @@ export default function Registration() {
         nin: formData.nin,
         public_key: publicKeyPem
       };
-
-       // 5. Send the data through the secure gateway using the .post method
-       const response = await secureApi.post(
-         '/auth/register/', 
-         registrationPayload, 
-         { 
-           target: 'auth_register', 
-           keyPair: keyPair 
-         }
-       );
-
+      // 5. Send the data through the secure gateway using the .post method
+      const response = await secureApi.post(
+        '/auth/register/',
+        registrationPayload,
+        {
+          target: 'auth_register',
+          keyPair: keyPair
+        }
+      );
       console.log('Registration successful:', response);
-
-      // On success, navigate to the dashboard page.
-      navigate('/dashboard');
+      
+      // Navigate directly to dashboard as user is now authenticated
+      navigate('/dashboard', { replace: true });
 
     } catch (err) {
       console.error('Registration failed:', err);
-      setSubmissionError(err.message || 'An unexpected error occurred. Please try again.');
+      // Try to extract backend error details
+      if (err.response && err.response.data) {
+        setSubmissionError(err.response.data);
+      } else if (err.data) {
+        setSubmissionError(err.data);
+      } else {
+        setSubmissionError(err.message || 'An unexpected error occurred. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -188,9 +196,20 @@ export default function Registration() {
           {renderStep()}
 
           {submissionError && (
-            <div className="flex items-center space-x-2 text-sm text-red-600 p-3 bg-red-50 rounded-md">
-              <AlertCircle className="h-5 w-5" />
-              <p>{submissionError}</p>
+            <div className="flex flex-col space-y-1 text-sm text-red-600 p-3 bg-red-50 rounded-md">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="h-5 w-5" />
+                <span>Error</span>
+              </div>
+              {typeof submissionError === 'string' ? (
+                <p>{submissionError}</p>
+              ) : (
+                Object.entries(submissionError).map(([field, messages]) => (
+                  <div key={field}>
+                    <strong>{field}:</strong> {Array.isArray(messages) ? messages.join(', ') : messages}
+                  </div>
+                ))
+              )}
             </div>
           )}
 
@@ -288,8 +307,8 @@ function Step2({ formData, handleChange, errors }) {
   return (
     <div className="space-y-6">
       <InputField name="username" label="Username" value={formData.username} onChange={handleChange} error={errors.username} />
-      <InputField name="pin" type="password" label="6-Digit Security PIN" value={formData.pin} onChange={handleChange} error={errors.pin} maxLength={6} />
-      <InputField name="confirm_pin" type="password" label="Confirm PIN" value={formData.confirm_pin} onChange={handleChange} error={errors.confirm_pin} maxLength={6} />
+      <InputField name="pin" type="password" label="6-Digit Security PIN" placeholder="your pin e.g 328712"  inputMode="numeric" pattern="[0-9]"value={formData.pin}  onChange={handleChange} error={errors.pin} maxLength={6} />
+      <InputField name="confirm_pin" type="password" pattern="[0-9]" label="Confirm PIN" value={formData.confirm_pin} onChange={handleChange} error={errors.confirm_pin} placeholder='repeat the pin' maxLength={6} />
     </div>
   );
 }

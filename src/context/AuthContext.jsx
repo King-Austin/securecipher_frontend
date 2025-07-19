@@ -58,12 +58,18 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       
+      // Validate PIN format before attempting decryption
+      if (!pin || pin.length < 4) {
+        throw new Error('PIN must be at least 4 digits long.');
+      }
+      
       // Attempt to unlock the encrypted private key with the PIN
       const encryptedKey = await SecureKeyManager.getEncryptedKey();
       if (!encryptedKey) {
         throw new Error('No encrypted key found. Please complete registration first.');
       }
       
+      // Decrypt the private key
       const privateKey = await SecureKeyManager.decryptPrivateKey(
         encryptedKey.encrypted, 
         pin, 
@@ -71,30 +77,103 @@ export const AuthProvider = ({ children }) => {
         encryptedKey.iv
       );
       
-      // Generate public key from private key for verification
-      const keyPair = {
-        privateKey,
-        publicKey: await window.crypto.subtle.importKey(
-          'spki',
-          new Uint8Array(atob(userPublicKey || localStorage.getItem('userPublicKey')).split('').map(c => c.charCodeAt(0))),
-          { name: 'ECDSA', namedCurve: 'P-384' },
-          true,
-          ['verify']
-        )
-      };
+      console.log('DEBUG: Private key decryption successful');
       
+      // Reconstruct the key pair with the public key from storage
+      const storedPublicKey = userPublicKey || localStorage.getItem('userPublicKey');
+      
+      let publicKey;
+      
+      if (storedPublicKey) {
+        console.log('DEBUG: Attempting to load stored public key...');
+        try {
+          // Parse PEM format public key
+          const pemHeader = "-----BEGIN PUBLIC KEY-----";
+          const pemFooter = "-----END PUBLIC KEY-----";
+          const pemContents = storedPublicKey
+            .replace(pemHeader, '')
+            .replace(pemFooter, '')
+            .replace(/\s/g, ''); // Remove all whitespace
+          
+          console.log('DEBUG: Extracted PEM contents length:', pemContents.length);
+          
+          const binaryDer = new Uint8Array(
+            atob(pemContents)
+              .split('')
+              .map(c => c.charCodeAt(0))
+          );
+          
+          console.log('DEBUG: Binary DER length:', binaryDer.length);
+          
+          publicKey = await window.crypto.subtle.importKey(
+            'spki',
+            binaryDer,
+            { name: 'ECDSA', namedCurve: 'P-384' },
+            true,
+            ['verify']
+          );
+          
+          console.log('DEBUG: Stored public key import successful');
+          
+        } catch (publicKeyError) {
+          console.warn('DEBUG: Stored public key import failed, regenerating from private key:', publicKeyError);
+          publicKey = null; // Will regenerate below
+        }
+      }
+      
+      // Fallback: Generate public key from private key if stored key failed
+      if (!publicKey) {
+        console.log('DEBUG: Regenerating public key from private key...');
+        try {
+          // Export private key and re-import as key pair to get public key
+          const privateKeyJwk = await window.crypto.subtle.exportKey('jwk', privateKey);
+          
+          // Remove private key components to create public key JWK
+          const publicKeyJwk = {
+            kty: privateKeyJwk.kty,
+            crv: privateKeyJwk.crv,
+            x: privateKeyJwk.x,
+            y: privateKeyJwk.y,
+            use: 'sig',
+            key_ops: ['verify']
+          };
+          
+          publicKey = await window.crypto.subtle.importKey(
+            'jwk',
+            publicKeyJwk,
+            { name: 'ECDSA', namedCurve: 'P-384' },
+            true,
+            ['verify']
+          );
+          
+          // Store the regenerated public key
+          const newPublicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(publicKey);
+          localStorage.setItem('userPublicKey', newPublicKeyPem);
+          setUserPublicKey(newPublicKeyPem);
+          
+          console.log('DEBUG: Public key regenerated and stored successfully');
+          
+        } catch (regenError) {
+          console.error('DEBUG: Failed to regenerate public key:', regenError);
+          throw new Error('Unable to reconstruct public key. Please re-register.');
+        }
+      }
+      
+      const keyPair = { privateKey, publicKey };
+      
+      // Update authentication state
       setUnlockedKeyPair(keyPair);
       setIsAuthenticated(true);
       
-      console.log('Successfully authenticated with cryptographic keys');
+      console.log('Authentication successful');
       return true;
       
     } catch (error) {
       console.error('Login failed:', error);
-      setError('Invalid PIN or authentication failed');
+      setError(error.message);
       setIsAuthenticated(false);
       setUnlockedKeyPair(null);
-      return false;
+      throw error; // Re-throw for UI handling
     } finally {
       setLoading(false);
     }
