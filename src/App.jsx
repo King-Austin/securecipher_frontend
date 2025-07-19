@@ -32,6 +32,7 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Root redirect: send new users to register, authenticated users to dashboard */}
+      console.log('isAuthenticated:', isAuthenticated);
       <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/register" />} />
       
       {/* Public routes */}
@@ -42,7 +43,7 @@ function AppRoutes() {
       {/* Demo route - accessible to everyone */}
       <Route path="/demo" element={
         <Layout>
-          <SecureOnboardingForm />
+          <PINSetup />
         </Layout>
       } />
       

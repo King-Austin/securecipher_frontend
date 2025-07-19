@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Shield, AlertCircle, Loader2 } from 'lucide-react';
 import { secureApi } from '../services/secureApi';
 import { SecureKeyManager } from '../utils/SecureKeyManager';
+import { useAuth } from '../context/AuthContext';
 
 const steps = ['Personal Information', 'Account Security', 'Verification'];
 
@@ -27,6 +28,7 @@ export default function Registration() {
   const [submissionError, setSubmissionError] = useState('');
   
   const navigate = useNavigate();
+  const { setUserData } = useAuth();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -133,8 +135,10 @@ export default function Registration() {
           keyPair: keyPair
         }
       );
-      console.log('Registration successful:', response);
-      
+      // Store user data in AuthContext
+      if (response && response.user) {
+        setUserData(response);
+      }
       // Navigate directly to dashboard as user is now authenticated
       navigate('/dashboard', { replace: true });
 

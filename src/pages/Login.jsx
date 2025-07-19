@@ -9,7 +9,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, setUserData } = useAuth();
 
   // Redirect to registration if no stored keypair is found
   useEffect(() => {
@@ -43,9 +43,13 @@ export default function Login() {
       setError('');
       
       // Authenticate with the PIN
+      // TODO: Fetch user data from backend after PIN unlock
+      // Example: const { success, userData } = await login(pin);
       const success = await login(pin);
       
+      // If you fetch user data here, call setUserData(userData)
       if (success) {
+        // setUserData(userData); // Uncomment and use actual userData when available
         // Small delay to show success state before navigation
         setTimeout(() => {
           navigate('/dashboard', { replace: true });

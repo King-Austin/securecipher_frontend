@@ -11,6 +11,9 @@ export const AuthProvider = ({ children }) => {
   const [pinIsSet, setPinIsSet] = useState(false); // Track if PIN is set
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [user, setUser] = useState(null); // Store user profile
+  const [accounts, setAccounts] = useState([]); // Store user accounts
+  const [transactions, setTransactions] = useState([]); // Store user transactions
   
   useEffect(() => {
     // Check authentication status based on encrypted key existence and PIN setup
@@ -52,8 +55,29 @@ export const AuthProvider = ({ children }) => {
     checkAuthStatus();
   }, [unlockedKeyPair]); // Re-check when keypair changes
   
+  // Set user data after login/registration and persist to localStorage
+  const setUserData = (userData) => {
+    setUser(userData.user || null);
+    setAccounts(userData.accounts || []);
+    setTransactions(userData.transactions || []);
+    // Persist to localStorage (non-sensitive only)
+    localStorage.setItem('userProfile', JSON.stringify(userData.user || null));
+    localStorage.setItem('userAccounts', JSON.stringify(userData.accounts || []));
+    localStorage.setItem('userTransactions', JSON.stringify(userData.transactions || []));
+  };
+
+  // Restore user data from localStorage on mount
+  useEffect(() => {
+    const storedUser = localStorage.getItem('userProfile');
+    const storedAccounts = localStorage.getItem('userAccounts');
+    const storedTransactions = localStorage.getItem('userTransactions');
+    if (storedUser) setUser(JSON.parse(storedUser));
+    if (storedAccounts) setAccounts(JSON.parse(storedAccounts));
+    if (storedTransactions) setTransactions(JSON.parse(storedTransactions));
+  }, []);
+  
   // Login with PIN - unlock the stored encrypted keypair
-  const login = async (pin) => {
+  const login = async (pin, userData) => {
     try {
       setLoading(true);
       setError(null);
@@ -164,6 +188,7 @@ export const AuthProvider = ({ children }) => {
       // Update authentication state
       setUnlockedKeyPair(keyPair);
       setIsAuthenticated(true);
+      if (userData) setUserData(userData);
       
       console.log('Authentication successful');
       return true;
@@ -180,7 +205,7 @@ export const AuthProvider = ({ children }) => {
   };
   
   // Register - store encrypted keypair and public key
-  const register = async (keyPair, pin) => {
+  const register = async (keyPair, pin, userData) => {
     try {
       setLoading(true);
       setError(null);
@@ -197,6 +222,7 @@ export const AuthProvider = ({ children }) => {
       setUnlockedKeyPair(keyPair);
       markPinAsSet();
       setIsAuthenticated(true);
+      if (userData) setUserData(userData);
       
       console.log('Registration completed successfully');
       return true;
@@ -215,13 +241,11 @@ export const AuthProvider = ({ children }) => {
     setUnlockedKeyPair(null);
     setIsAuthenticated(false);
     setUserPublicKey(null);
-    setPinIsSet(false);
     setError(null);
-    
-    // Clear stored data (but keep encrypted keys for re-login)
-    localStorage.removeItem('userPublicKey');
-    localStorage.removeItem('pinIsSet');
-    
+    setUser(null);
+    setAccounts([]);
+    setTransactions([]);
+       
     // Note: We keep the encrypted private key in IndexedDB so user can login again
     // To completely remove account, a separate deleteAccount method would be needed
     
@@ -252,6 +276,9 @@ export const AuthProvider = ({ children }) => {
       // Clear localStorage
       localStorage.removeItem('userPublicKey');
       localStorage.removeItem('pinIsSet');
+      localStorage.removeItem('userProfile');
+      localStorage.removeItem('userAccounts');
+      localStorage.removeItem('userTransactions');
       
       // Clear context state
       setUnlockedKeyPair(null);
@@ -276,14 +303,18 @@ export const AuthProvider = ({ children }) => {
     loading,
     error,
     pinIsSet,
-    login, // Now takes PIN instead of tokens
-    register, // New method for registration
+    login,
+    register,
     logout,
-    setUnlockedKeyPair, // Keep for compatibility
+    setUnlockedKeyPair,
     markPinAsSet,
     hasCompletedRegistration,
     getCurrentUserPublicKey,
     deleteAccount,
+    user,
+    accounts,
+    transactions,
+    setUserData,
   };
 
   return (
