@@ -102,7 +102,6 @@ export const SecureKeyManager = {
 
     
     try {
-      // Add timing protection: always take minimum time
       
       const key = await this.deriveEncryptionKey(pin, salt);
       const pkcs8 = await window.crypto.subtle.decrypt(
@@ -121,7 +120,6 @@ export const SecureKeyManager = {
       
 
       
-      // Record successful attempt
       return privateKey;
       
     } catch (error) {

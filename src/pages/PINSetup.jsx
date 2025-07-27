@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Check, AlertCircle, Loader } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import secureApi from '../services/secureApi';
+import {secureApi} from '../services/secureApi';
 
 export default function PINSetup() {
   const [pin, setPin] = useState('');

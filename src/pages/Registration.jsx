@@ -104,17 +104,14 @@ export default function Registration() {
       // 1. Generate cryptographic key pair
       const keyPair = await SecureKeyManager.generateKeyPair();
       const publicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(keyPair.publicKey);
-      console.log('Generated key pair:', keyPair);
-      console.log('Public key PEM:', publicKeyPem);
-      // 2. Store the public key securely
 
       // 2. Encrypt the private key with the user's PIN
       const encryptedKey = await SecureKeyManager.encryptPrivateKey(keyPair.privateKey, formData.pin);
 
-      // 3. Store the encrypted key securely in IndexedDB
-      await SecureKeyManager.storeEncryptedKey(encryptedKey);
+      // 3. Store the encrypted key securely in localStorage
+      SecureKeyManager.storeEncryptedKey(encryptedKey);
 
-      // 4. Prepare flat registration payload matching backend requirements
+      // 4. Prepare registration payload
       const registrationPayload = {
         email: formData.email,
         first_name: formData.first_name,
@@ -124,27 +121,21 @@ export default function Registration() {
         address: formData.address,
         occupation: formData.occupation,
         nin: formData.nin,
-        public_key: publicKeyPem
+        bvn: formData.bvn,
+        username: formData.username,
+        public_key: publicKeyPem, // Include public key for backend
       };
-      // 5. Send the data through the secure gateway using the .post method
-      const response = await secureApi.post(
-        '/auth/register/',
-        registrationPayload,
-        {
-          target: 'auth_register',
-          keyPair: keyPair
-        }
-      );
-      // Store user data in AuthContext
+
+      // 5. Send the data through the secure gateway
+      const response = await secureApi.post('register', registrationPayload);
+
       if (response && response.user) {
         setUserData(response);
       }
-      // Navigate directly to dashboard as user is now authenticated
       navigate('/dashboard', { replace: true });
 
     } catch (err) {
       console.error('Registration failed:', err);
-      // Try to extract backend error details
       if (err.response && err.response.data) {
         setSubmissionError(err.response.data);
       } else if (err.data) {
