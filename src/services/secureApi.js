@@ -1,6 +1,6 @@
-import { SecureKeyManager, SecureTransactionHandler } from '../utils/SecureKeyManager';
+import { SecureKeyManager, SecureTransactionHandler } from '../utils/SecureKeyManager'; 
 
-const BASEURL = 'http://localhost:8000';
+const BASEURL = 'https://turbo-space-spoon-69r4q64wgj6c57xp-8000.app.github.dev';
 let serverPublicKey = null, keyFetchTimestamp = 0;
 const KEY_CACHE_DURATION = 3600000;
 
