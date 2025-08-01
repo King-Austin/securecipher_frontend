@@ -1,50 +1,78 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, Shield, AlertCircle } from 'lucide-react';
+import { KeyRound, Shield, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { SecureKeyManager } from '../utils/SecureKeyManager';
 
 export default function Login() {
-  const [formData, setFormData] = useState({
-    username: '',
-    password: '',
-  });
+  const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, setUserData } = useAuth();
+
+  // Redirect to registration if no stored keypair is found
+  useEffect(() => {
+    (async () => {
+      try {
+        const encryptedKey = await SecureKeyManager.getEncryptedKey();
+        if (!encryptedKey) {
+          navigate('/register');
+        }
+      } catch {
+        navigate('/register');
+      }
+    })();
+  }, [navigate]);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setPin(e.target.value);
     setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.username || !formData.password) {
-      setError('Please fill in all fields');
+    if (!pin) {
+      setError('Please enter your PIN to unlock your key.');
       return;
     }
     
     try {
       setIsLoading(true);
+      setError('');
       
-      // Call login API
-      await login(formData.username, formData.password);
+      // Authenticate with the PIN
+      // TODO: Fetch user data from backend after PIN unlock
+      // Example: const { success, userData } = await login(pin);
+      const success = await login(pin);
       
-      // Navigate to dashboard on success
-      navigate('/dashboard');
-    } catch (err) {
-      console.error('Error during login:', err);
-      if (err.message && err.message.includes('CORS')) {
-        setError('There was a cross-origin (CORS) error connecting to the server. Please try a different browser or check your network connection.');
-      } else if (err.data && err.data.error) {
-        setError(err.data.error);
-      } else if (err.status === 0) {
-        setError('Unable to connect to the server. Please check your network connection and try again.');
+      // If you fetch user data here, call setUserData(userData)
+      if (success) {
+        // setUserData(userData); // Uncomment and use actual userData when available
+        // Small delay to show success state before navigation
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 100);
       } else {
-        setError('Invalid username or password. Please try again.');
+        setError('Invalid PIN. Please try again.');
+      }
+
+    } catch (err) {
+      console.error('Login error:', err);
+      
+      // Provide user-friendly error messages
+      if (err.message.includes('Invalid PIN')) {
+        setError('Invalid PIN. Please check your PIN and try again.');
+      } else if (err.message.includes('No encrypted key found')) {
+        setError('No account found. Please register first.');
+        setTimeout(() => navigate('/register'), 2000);
+      } else if (err.message.includes('Account locked')) {
+        setError(err.message);
+      } else if (err.message.includes('Please wait')) {
+        setError('Please wait a moment before trying again.');
+      } else {
+        setError('Login failed. Please try again or contact support.');
       }
     } finally {
       setIsLoading(false);
@@ -57,10 +85,10 @@ export default function Login() {
         <div className="mx-auto w-full max-w-md">
           <div className="text-center">
             <h2 className="text-3xl font-extrabold text-gray-900">
-              Secure Cipher Bank
+              Welcome Back
             </h2>
             <p className="mt-2 text-sm text-gray-600">
-              Sign in to your secure digital banking account
+              Enter your PIN to securely access your account.
             </p>
           </div>
 
@@ -68,83 +96,53 @@ export default function Login() {
             <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
               <form className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                  <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                    Username
+                  <label htmlFor="pin" className="block text-sm font-medium text-gray-700">
+                    Security PIN
                   </label>
                   <div className="mt-1">
                     <input
-                      id="username"
-                      name="username"
-                      type="text"
-                      required
-                      value={formData.username}
-                      onChange={handleChange}
-                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
-                      placeholder="your_username"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                    Password
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      id="password"
-                      name="password"
+                      id="pin"
+                      name="pin"
                       type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="current-password"
+                      autoFocus
                       required
-                      value={formData.password}
+                      value={pin}
                       onChange={handleChange}
-                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
-                      placeholder="••••••••"
+                      maxLength="6"
+                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm transition-colors duration-200"
+                      placeholder="Enter your 6-digit PIN"
+                      disabled={isLoading}
                     />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <input
-                      id="remember-me"
-                      name="remember-me"
-                      type="checkbox"
-                      className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
-                      Remember me
-                    </label>
-                  </div>
-
-                  <div className="text-sm">
-                    <a href="#" className="font-medium text-green-600 hover:text-green-500">
-                      Forgot your password?
-                    </a>
                   </div>
                 </div>
 
                 {error && (
-                  <div className="rounded-md bg-red-50 p-4">
-                    <div className="flex">
-                      <div className="flex-shrink-0">
-                        <AlertCircle className="h-5 w-5 text-red-400" />
-                      </div>
-                      <div className="ml-3">
-                        <h3 className="text-sm font-medium text-red-800">{error}</h3>
-                      </div>
-                    </div>
+                  <div className="flex items-center space-x-2 text-sm text-red-600">
+                    <AlertCircle className="h-5 w-5" />
+                    <p>{error}</p>
                   </div>
                 )}
 
                 <div>
                   <button
                     type="submit"
-                    disabled={isLoading}
-                    className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
-                      isLoading ? 'opacity-75 cursor-not-allowed' : ''
-                    }`}
+                    disabled={isLoading || !pin}
+                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors duration-200"
                   >
-                    {isLoading ? 'Signing in...' : 'Sign In'}
+                    {isLoading ? (
+                      <div className="flex items-center">
+                        <Loader2 className="animate-spin h-5 w-5 mr-2" />
+                        Authenticating...
+                      </div>
+                    ) : (
+                      <div className="flex items-center">
+                        <KeyRound className="h-5 w-5 mr-2" />
+                        Unlock & Sign In
+                      </div>
+                    )}
                   </button>
                 </div>
               </form>
@@ -156,29 +154,31 @@ export default function Login() {
                   </div>
                   <div className="relative flex justify-center text-sm">
                     <span className="px-2 bg-white text-gray-500">
-                      Don't have an account?
+                      Or
                     </span>
                   </div>
                 </div>
 
-                <div className="mt-6">
-                  <Link
-                    to="/register"
-                    className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                  >
-                    Create a new account
-                  </Link>
+                <div className="mt-6 text-center">
+                  <p className="text-sm text-gray-600">
+                    Don't have an account?{' '}
+                    <Link to="/register" className="font-medium text-green-600 hover:text-green-500">
+                      Create one now
+                    </Link>
+                  </p>
                 </div>
-              </div>
-              
-              <div className="mt-6 bg-green-50 rounded-md p-4 flex items-center">
-                <Shield className="h-5 w-5 text-green-500 mr-2" />
-                <p className="text-sm text-green-700">
-                  <span className="font-semibold">Bank-level Security:</span> Your data is encrypted and protected with military-grade security.
-                </p>
               </div>
             </div>
           </div>
+        </div>
+      </div>
+      <div className="hidden lg:flex lg:flex-1 bg-green-700 items-center justify-center p-10">
+        <div className="text-white text-center">
+          <Shield size={80} className="mx-auto mb-4" />
+          <h1 className="text-3xl font-bold">Passwordless Security</h1>
+          <p className="mt-4 text-lg text-green-200">
+            Your private key is your password. It's encrypted on your device and unlocked only by you.
+          </p>
         </div>
       </div>
     </div>

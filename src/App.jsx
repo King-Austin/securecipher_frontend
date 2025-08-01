@@ -25,23 +25,30 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Styles
 import './App.css';
-import SecureOnboardingForm from './components/SecureOnBoardingForm';
+
+import RecentTransactions from './components/dashboard/RecentTransactions';
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
-
   return (
     <Routes>
-      {/* Root redirect based on authentication */}
-      <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />} />
+      {/* Root redirect: send new users to register, authenticated users to dashboard */}
+      console.log('isAuthenticated:', isAuthenticated);
+      <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/register" />} />
       
       {/* Public routes */}
-      <Route path="/register" element={<Registration />} />
-      <Route path="/login" element={<SecureOnboardingForm />} />
+      <Route path="/register" element={<Registration />} /> 
+      <Route path="/login" element={<Login />} />
       <Route path="/pin-setup" element={<PINSetup />} />
       
+      {/* Demo route - accessible to everyone */}
+      <Route path="/demo" element={
+        <Layout>
+          <PINSetup />
+        </Layout>
+      } />
+      
       {/* Protected routes with Layout */}
-      <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={
           <Layout>
             <Dashboard />
@@ -75,12 +82,10 @@ function AppRoutes() {
         <Route path="/transactions" element={
           <Layout>
             <div className="p-6 text-center">
-              <h1 className="text-2xl font-semibold text-gray-800 mb-4">Transactions</h1>
-              <p className="text-gray-600">This feature is coming soon.</p>
+              <RecentTransactions />
             </div>
           </Layout>
         } />
-      </Route>
       
       {/* Error routes */}
       <Route path="/server-error" element={<ServerError />} />

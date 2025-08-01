@@ -1,8 +1,23 @@
 import { useState, useEffect } from 'react';
 import { Shield, Key, Lock, Copy, Check } from 'lucide-react';
 import { SecureKeyManager } from '../utils/SecureKeyManager';
+import { useNavigate } from 'react-router-dom';
+
 
 export default function SecurityDetails() {
+
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hasKeys =
+      localStorage.getItem('pinIsSet');
+    if (!hasKeys) {
+      navigate('/register', { replace: true });
+    }
+  }, [navigate]);
+
+  
+
   const [publicKey, setPublicKey] = useState('');
   const [copied, setCopied] = useState(false);
   

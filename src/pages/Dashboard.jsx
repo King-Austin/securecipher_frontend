@@ -2,13 +2,15 @@ import AccountSummary from '../components/dashboard/AccountSummary';
 import QuickActions from '../components/dashboard/QuickActions';
 import RecentTransactions from '../components/dashboard/RecentTransactions';
 import SpendingInsights from '../components/dashboard/SpendingInsights';
+import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
+  const { user } = useAuth();
+
   return (
     <div>
       <h1 className="text-2xl font-semibold text-gray-800">Dashboard</h1>
-      <p className="text-gray-600 mb-6">Welcome back, Samuel</p>
-      
+      <p className="text-gray-600 mb-6">Welcome back, {user ? user.first_name : 'John'}</p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <div className="md:col-span-2">
           <AccountSummary />
@@ -17,7 +19,6 @@ export default function Dashboard() {
           <QuickActions />
         </div>
       </div>
-      
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <RecentTransactions />

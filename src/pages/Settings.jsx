@@ -2,8 +2,21 @@ import { useState } from 'react';
 import EditProfile from '../components/settings/EditProfile';
 import SecuritySettings from '../components/settings/SecuritySettings';
 import NotificationSettings from '../components/settings/NotificationSettings';
+import { useNavigate } from 'react-router-dom';
+
 
 export default function Settings() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hasKeys =
+      localStorage.getItem('pinIsSet');
+    if (!hasKeys) {
+      navigate('/register', { replace: true });
+    }
+  }, [navigate]);
+
+
   const [activeTab, setActiveTab] = useState('profile');
 
   const tabs = [

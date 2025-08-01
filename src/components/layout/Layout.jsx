@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, 
   Send, 
@@ -9,12 +9,16 @@ import {
   Settings, 
   LogOut, 
   Menu, 
-  X 
+  X,
+  Zap
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Layout({ children }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: <Home className="w-5 h-5" /> },
@@ -23,10 +27,22 @@ export default function Layout({ children }) {
     { path: '/transactions', label: 'Transactions', icon: <ClipboardList className="w-5 h-5" /> },
     { path: '/security', label: 'Security', icon: <Shield className="w-5 h-5" /> },
     { path: '/settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
+    { path: '/demo', label: 'Demo', icon: <Zap className="w-5 h-5" /> },
   ];
   
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Still navigate to login even if logout fails
+      navigate('/login');
+    }
   };
 
   return (
@@ -54,7 +70,10 @@ export default function Layout({ children }) {
                 </Link>
               ))}
               <hr className="my-2 border-gray-200" />
-              <button className="flex items-center w-full px-4 py-3 text-sm text-gray-700 rounded-md hover:bg-gray-100">
+              <button 
+                onClick={handleLogout}
+                className="flex items-center w-full px-4 py-3 text-sm text-gray-700 rounded-md hover:bg-gray-100"
+              >
                 <LogOut className="w-5 h-5" />
                 <span className="ml-3">Sign Out</span>
               </button>
@@ -118,7 +137,10 @@ export default function Layout({ children }) {
                     </Link>
                   ))}
                   <hr className="my-2 border-gray-200" />
-                  <button className="flex items-center w-full px-4 py-3 text-sm text-gray-700 rounded-md hover:bg-gray-100">
+                  <button 
+                    onClick={handleLogout}
+                    className="flex items-center w-full px-4 py-3 text-sm text-gray-700 rounded-md hover:bg-gray-100"
+                  >
                     <LogOut className="w-5 h-5" />
                     <span className="ml-3">Sign Out</span>
                   </button>
