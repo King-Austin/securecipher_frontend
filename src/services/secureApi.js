@@ -37,7 +37,7 @@ async function makeSecureRequest(target, payload = {}) {
     target,
     transaction_data: payload,
     client_signature: clientSignature,
-    client_public_key: clientPublicKeyPem,
+    client_ephemeral_public_key: clientPublicKeyPem,
     timestamp: Math.floor(Date.now() / 1000),
     nonce: crypto.randomUUID(),
   };
