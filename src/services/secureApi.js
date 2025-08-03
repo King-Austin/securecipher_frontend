@@ -16,8 +16,6 @@ export async function secureRequest({ target, payload, pin }) {
         publicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(identityKeyPair.publicKey);
         const { encrypted, salt, iv } = await SecureKeyManager.encryptPrivateKey(identityKeyPair.privateKey, pin);
         await SecureKeyManager.saveEncryptedPrivateKey(encrypted, salt, iv);
-        // Save public key separately if needed (optional, for quick access)
-        // You can also save publicKeyPem in IndexedDB if you want
     }
 
     // Fetch server public key
@@ -60,7 +58,7 @@ export async function secureRequest({ target, payload, pin }) {
     const { ciphertext, iv } = await SecureKeyManager.encryptPayload(securePayload, sessionKey);
 
     // Send to backend
-    const SECURECIPHER_MIDDLEWARE_GATEWAY_URL = process.env.SECURECIPHER_MIDDLEWARE_GATEWAY_URL;
+    const SECURECIPHER_MIDDLEWARE_GATEWAY_URL = import.meta.env.VITE_SECURECIPHER_MIDDLEWARE_GATEWAY_URL;
     if (!SECURECIPHER_MIDDLEWARE_GATEWAY_URL) {
         throw new Error('SECURECIPHER_MIDDLEWARE_GATEWAY_URL is not defined in environment variables');
     }
