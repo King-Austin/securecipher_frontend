@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertCircle, Check, Loader } from 'lucide-react';
-import { secureApi } from '../services/secureApi';
-import { useAuth } from '../context/AuthContext';
+import { secureRequest } from '../services/secureApi';
+import * as SecureKeyManager from '../utils/SecureKeyManager';
 
 export default function SendMoney() {
   const [step, setStep] = useState(1);
@@ -16,8 +16,17 @@ export default function SendMoney() {
   const [success, setSuccess] = useState(false);
   const [transactionResult, setTransactionResult] = useState(null);
   const [recipientInfo, setRecipientInfo] = useState(null);
+  const [accounts, setAccounts] = useState([]);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  const { isAuthenticated, accounts } = useAuth();
+  // Load user accounts from local storage (set by Registration/Login)
+  useEffect(() => {
+    const userAccounts = localStorage.getItem('userAccounts');
+    if (userAccounts) {
+      setAccounts(JSON.parse(userAccounts));
+      setIsAuthenticated(true);
+    }
+  }, []);
 
   // Validate amount before proceeding to next step
   const handleNextStep = async () => {
@@ -52,10 +61,14 @@ export default function SendMoney() {
       return;
     }
 
-    // Fetch recipient info
+    // Fetch recipient info securely
     try {
       const payload = { account_number: transactionData.to_account };
-      const response = await secureApi.post('validate_account', payload);
+      const response = await secureRequest({
+        target: 'validate_account',
+        payload,
+        pin // PIN is not strictly needed for validation, but can be required by backend
+      });
       if (response && response.user) {
         setRecipientInfo(response.user);
         setError('');
@@ -89,7 +102,7 @@ export default function SendMoney() {
     }
   };
 
-  // Refactored submit logic
+  // Use SecureKeyManager to verify PIN before transaction
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (pin.length !== 6) {
@@ -117,19 +130,40 @@ export default function SendMoney() {
         return;
       }
 
+      // Verify PIN and unlock key before sending
+      const keyData = await SecureKeyManager.fetchEncryptedPrivateKey();
+      if (!keyData) throw new Error('No encrypted key found. Please login again.');
+      await SecureKeyManager.decryptPrivateKey(keyData.encrypted, pin, keyData.salt, keyData.iv);
+
       const payload = {
         from_account: account.account_number,
         to_account: transactionData.to_account,
         amount: transactionData.amount,
         description: transactionData.description || 'Fund Transfer',
-        pin,
       };
 
-      const response = await secureApi.post('transfer', payload);
+      // Use secureRequest for transaction
+      const response = await secureRequest({
+        target: 'transfer',
+        payload,
+        pin
+      });
 
       if (response.success) {
         setTransactionResult(response);
         setSuccess(true);
+
+        // Update user data and accounts in localStorage if provided by server
+        if (response.user) {
+          localStorage.setItem('userProfile', JSON.stringify(response.user));
+        }
+        if (response.accounts) {
+          localStorage.setItem('userAccounts', JSON.stringify(response.accounts));
+          setAccounts(response.accounts); // update local state for immediate UI update
+        }
+        if (response.transactions) {
+          localStorage.setItem('userTransactions', JSON.stringify(response.transactions));
+        }
       } else {
         throw new Error(response.error || 'Transaction failed. Please try again.');
       }
@@ -149,7 +183,17 @@ export default function SendMoney() {
     setError('');
     setSuccess(false);
     setTransactionResult(null);
+    setRecipientInfo(null);
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <AlertCircle className="h-8 w-8 text-red-600" />
+        <p className="ml-4 text-gray-600">You must be logged in to send money.</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -315,6 +359,14 @@ export default function SendMoney() {
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-center tracking-[1em]"
                 placeholder="••••••"
               />
+              <div className="mt-2 p-3 bg-green-50 rounded text-green-700 text-sm">
+                <strong>What is your PIN used for?</strong>
+                <ul className="list-disc ml-5 mt-1">
+                  <li>Your PIN encrypts and protects your private key on this device.</li>
+                  <li>It is required to authorize secure transactions and access your account.</li>
+                  <li>Never share your PIN with anyone. It cannot be recovered if forgotten.</li>
+                </ul>
+              </div>
             </div>
             <div className="mt-6 flex items-center justify-between space-x-4">
               <button

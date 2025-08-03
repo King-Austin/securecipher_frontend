@@ -1,24 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { KeyRound, Shield, AlertCircle, Loader2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { SecureKeyManager } from '../utils/SecureKeyManager';
+import * as SecureKeyManager from '../utils/SecureKeyManager';
 
 export default function Login() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { login, setUserData } = useAuth();
 
   // Redirect to registration if no stored keypair is found
   useEffect(() => {
     (async () => {
       try {
-        const encryptedKey = await SecureKeyManager.getEncryptedKey();
-        if (!encryptedKey) {
-          navigate('/register');
-        }
+        const keyData = await SecureKeyManager.fetchEncryptedPrivateKey();
+        if (!keyData) navigate('/register');
       } catch {
         navigate('/register');
       }
@@ -26,54 +22,28 @@ export default function Login() {
   }, [navigate]);
 
   const handleChange = (e) => {
-    setPin(e.target.value);
+    setPin(e.target.value.replace(/[^0-9]/g, ''));
     setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!pin) {
-      setError('Please enter your PIN to unlock your key.');
+    if (!pin || pin.length !== 6) {
+      setError('Please enter your 6-digit PIN to unlock your key.');
       return;
     }
-    
+    setIsLoading(true);
+    setError('');
     try {
-      setIsLoading(true);
-      setError('');
-      
-      // Authenticate with the PIN
-      // TODO: Fetch user data from backend after PIN unlock
-      // Example: const { success, userData } = await login(pin);
-      const success = await login(pin);
-      
-      // If you fetch user data here, call setUserData(userData)
-      if (success) {
-        // setUserData(userData); // Uncomment and use actual userData when available
-        // Small delay to show success state before navigation
-        setTimeout(() => {
-          navigate('/dashboard', { replace: true });
-        }, 100);
-      } else {
-        setError('Invalid PIN. Please try again.');
-      }
-
+      // Local unlock: try to decrypt private key with PIN
+      const { encrypted, salt, iv } = await SecureKeyManager.fetchEncryptedPrivateKey();
+      await SecureKeyManager.decryptPrivateKey(encrypted, pin, salt, iv);
+      // Success: redirect to dashboard
+      setTimeout(() => {
+        navigate('/dashboard', { replace: true });
+      }, 100);
     } catch (err) {
-      console.error('Login error:', err);
-      
-      // Provide user-friendly error messages
-      if (err.message.includes('Invalid PIN')) {
-        setError('Invalid PIN. Please check your PIN and try again.');
-      } else if (err.message.includes('No encrypted key found')) {
-        setError('No account found. Please register first.');
-        setTimeout(() => navigate('/register'), 2000);
-      } else if (err.message.includes('Account locked')) {
-        setError(err.message);
-      } else if (err.message.includes('Please wait')) {
-        setError('Please wait a moment before trying again.');
-      } else {
-        setError('Login failed. Please try again or contact support.');
-      }
+      setError('Invalid PIN. Please check your PIN and try again.');
     } finally {
       setIsLoading(false);
     }

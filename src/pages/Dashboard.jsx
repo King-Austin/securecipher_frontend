@@ -2,10 +2,10 @@ import AccountSummary from '../components/dashboard/AccountSummary';
 import QuickActions from '../components/dashboard/QuickActions';
 import RecentTransactions from '../components/dashboard/RecentTransactions';
 import SpendingInsights from '../components/dashboard/SpendingInsights';
-import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  // Get user from localStorage
+  const user = JSON.parse(localStorage.getItem('userProfile'));
 
   return (
     <div>

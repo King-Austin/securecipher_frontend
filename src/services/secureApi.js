@@ -1,76 +1,99 @@
-import { SecureKeyManager, SecureTransactionHandler } from '../utils/SecureKeyManager'; 
+import * as SecureKeyManager from '../utils/SecureKeyManager';
 
-const BASEURL = 'https://turbo-space-spoon-69r4q64wgj6c57xp-8000.app.github.dev';
-let serverPublicKey = null, keyFetchTimestamp = 0;
-const KEY_CACHE_DURATION = 3600000;
 
-async function getServerPublicKey() {
-  const now = Date.now();
-  if (!serverPublicKey || (now - keyFetchTimestamp) > KEY_CACHE_DURATION) {
-    const res = await fetch(`${BASEURL}/api/middleware/public-key`);
-    if (!res.ok) throw new Error('Failed to fetch server public key.');
-    const { public_key } = await res.json();
-    serverPublicKey = await SecureTransactionHandler.importServerPublicKey(public_key);
-    keyFetchTimestamp = now;
-  }
-  return serverPublicKey;
-}
-
-async function makeSecureRequest(target, payload = {}) {
-  // Always get keypair from SecureKeyManager
-  const keyPair = await SecureKeyManager.generateKeyPair();
-  console.log('Using key pair:', keyPair);
-  if (!keyPair?.privateKey) throw new Error("Unlocked key pair required.");
-
-  const serverPublicKey = await getServerPublicKey();
-  const clientPublicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(keyPair.publicKey);
-  const clientSignature = await SecureTransactionHandler.signTransaction(payload, keyPair.privateKey);
-
-  const ephemeralKeyPair = await SecureTransactionHandler.generateEphemeralKeyPair();
-  const ephemeralPubkey = btoa(String.fromCharCode(...new Uint8Array(
-    await window.crypto.subtle.exportKey('spki', ephemeralKeyPair.publicKey)
-  )));
-  const sharedSecret = await SecureTransactionHandler.deriveSharedSecret(ephemeralKeyPair.privateKey, serverPublicKey);
-  const sessionKey = await SecureTransactionHandler.deriveSessionKey(sharedSecret);
-
-  const securePayload = {
-    target,
-    transaction_data: payload,
-    client_signature: clientSignature,
-    client_public_key: clientPublicKeyPem,
-    timestamp: Math.floor(Date.now() / 1000),
-    nonce: crypto.randomUUID(),
-  };
-  const { ciphertext, iv } = await SecureTransactionHandler.encryptPayload(securePayload, sessionKey);
-
-  const res = await fetch(`${BASEURL}/api/secure/gateway`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ephemeral_pubkey: ephemeralPubkey, ciphertext, iv }),
-  });
-
-  const responseData = await res.json();
-  if (!res.ok) {
-    let errorMsg = 'An unknown error occurred.';
+// Unified secure request handler for all middleware requests
+export async function secureRequest({ target, payload, pin }) {
+    // Try to fetch and decrypt identity keypair from IndexedDB
+    let identityKeyPair;
+    let publicKeyPem;
     try {
-      const decryptedError = await SecureTransactionHandler.decryptResponse(responseData, sessionKey);
-      errorMsg = decryptedError.error || errorMsg;
-    } catch (e) {
-      errorMsg = e.message || errorMsg;
+        const { encrypted, salt, iv } = await SecureKeyManager.fetchEncryptedPrivateKey();
+        identityKeyPair = await SecureKeyManager.decryptPrivateKey(encrypted, pin, salt, iv);
+        publicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(identityKeyPair.publicKey);
+    } catch (err) {
+        // If not present, generate new identity keypair and save
+        identityKeyPair = await SecureKeyManager.generateSigningKeyPair();
+        publicKeyPem = await SecureKeyManager.exportPublicKeyAsPem(identityKeyPair.publicKey);
+        const { encrypted, salt, iv } = await SecureKeyManager.encryptPrivateKey(identityKeyPair.privateKey, pin);
+        await SecureKeyManager.saveEncryptedPrivateKey(encrypted, salt, iv);
+        // Save public key separately if needed (optional, for quick access)
+        // You can also save publicKeyPem in IndexedDB if you want
     }
-    throw new Error(`[${res.status}] ${errorMsg}`);
-  }
-  return await SecureTransactionHandler.decryptResponse(responseData, sessionKey);
-}
 
-function logout() {
-  localStorage.removeItem('userPublicKey');
-  localStorage.removeItem('pinIsSet');
-  serverPublicKey = null; keyFetchTimestamp = 0;
-  window.location.href = '/login';
-}
+    // Fetch server public key
+    const serverPublicKey = await SecureKeyManager.getServerPublicKey();
 
-export const secureApi = {
-  post: makeSecureRequest,
-  logout,
-};
+    // Generate ephemeral key pair for session
+    const ephemeralKeyPair = await SecureKeyManager.generateEphemeralKeyPair();
+    const ephemeralPubkey = SecureKeyManager.toBase64(
+        await window.crypto.subtle.exportKey('spki', ephemeralKeyPair.publicKey)
+    );
+
+    // Derive shared secret and session key
+    const sharedSecret = await SecureKeyManager.deriveSharedSecret(
+        ephemeralKeyPair.privateKey,
+        serverPublicKey
+    );
+    const sessionKey = await SecureKeyManager.deriveSessionKey(sharedSecret);
+
+    // Prepare payload to sign
+    const nonce = crypto.randomUUID();
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signPayloadDict = {
+        transaction_data: payload,
+        timestamp,
+        nonce,
+    };
+    const clientSignature = await SecureKeyManager.signTransaction(signPayloadDict, identityKeyPair.privateKey);
+
+    // Build secure payload
+    const securePayload = {
+        target,
+        transaction_data: payload,
+        client_signature: clientSignature,
+        client_public_key: publicKeyPem,
+        timestamp,
+        nonce,
+    };
+
+    // Encrypt payload
+    const { ciphertext, iv } = await SecureKeyManager.encryptPayload(securePayload, sessionKey);
+
+    // Send to backend
+    const SECURECIPHER_MIDDLEWARE_GATEWAY_URL = process.env.SECURECIPHER_MIDDLEWARE_GATEWAY_URL;
+    if (!SECURECIPHER_MIDDLEWARE_GATEWAY_URL) {
+        throw new Error('SECURECIPHER_MIDDLEWARE_GATEWAY_URL is not defined in environment variables');
+    }
+    // Ensure the URL is valid
+    if (!SECURECIPHER_MIDDLEWARE_GATEWAY_URL.startsWith('http')) {
+        throw new Error('SECURECIPHER_MIDDLEWARE_GATEWAY_URL must start with http:// or https://');
+    }
+    // Make the request to the middleware gateway 
+    const res = await fetch(SECURECIPHER_MIDDLEWARE_GATEWAY_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+            ephemeral_pubkey: ephemeralPubkey,
+            ciphertext,
+            iv
+        }),
+        credentials: 'same-origin'
+    });
+
+    // Handle response
+    const responseData = await res.json();
+    if (!res.ok) {
+        let errorMsg = 'An unknown error occurred.';
+        try {
+            const decryptedError = await SecureKeyManager.decryptResponse(responseData, sessionKey);
+            errorMsg = decryptedError.error || errorMsg;
+        } catch (e) {
+            errorMsg = e.message || errorMsg;
+        }
+        throw new Error(`[${res.status}] ${errorMsg}`);
+    }
+    return await SecureKeyManager.decryptResponse(responseData, sessionKey);
+}
