@@ -58,7 +58,7 @@ export async function secureRequest({ target, payload, pin }) {
     const { ciphertext, iv } = await SecureKeyManager.encryptPayload(securePayload, sessionKey);
 
     // Send to backend
-    const SECURECIPHER_MIDDLEWARE_GATEWAY_URL = import.meta.env.VITE_SECURECIPHER_MIDDLEWARE_GATEWAY_URL;
+    const SECURECIPHER_MIDDLEWARE_GATEWAY_URL = 'http://localhost:8000/api/secure/gateway/';
     if (!SECURECIPHER_MIDDLEWARE_GATEWAY_URL) {
         throw new Error('SECURECIPHER_MIDDLEWARE_GATEWAY_URL is not defined in environment variables');
     }

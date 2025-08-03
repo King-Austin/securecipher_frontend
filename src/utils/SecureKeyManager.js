@@ -196,7 +196,7 @@ export async function decryptPrivateKey(encrypted, pin, salt, iv) {
 }
 
 // Fetch server public key from backend
-const SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL = import.meta.env.VITE_SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL;
+const SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL = 'http://localhost:8000/api/middleware/public-key/';
 if (!SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL) {
     throw new Error('SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL is not defined in environment variables');
 }
