@@ -1,9 +1,16 @@
 import { ArrowUpRight, ArrowDownLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useState, useEffect } from 'react';
 
 export default function RecentTransactions() {
-  const { transactions } = useAuth();
+  const [transactions, setTransactions] = useState([]);
+
+  // Load transactions from localStorage
+  useEffect(() => {
+    const txnData = localStorage.getItem('userTransactions');
+    if (txnData) setTransactions(JSON.parse(txnData));
+  }, []);
+
   // Sort by date (newest first) and limit to 5
   const sortedTransactions = (transactions || [])
     .slice()

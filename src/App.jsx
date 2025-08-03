@@ -4,7 +4,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Layout from './components/layout/Layout';
 
 // Common Components
-import ProtectedRoute from './components/common/ProtectedRoute';
 
 // Pages
 import Registration from './pages/Registration';

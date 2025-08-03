@@ -12,14 +12,22 @@ import {
   X,
   Zap
 } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
 
 export default function Layout({ children }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
-  
+
+  // Remove useAuth, use localStorage for logout
+  const handleLogout = () => {
+    // Clear user data from localStorage
+    localStorage.removeItem('userProfile');
+    localStorage.removeItem('userAccounts');
+    localStorage.removeItem('userTransactions');
+    localStorage.removeItem('keyUnlocked');
+    navigate('/login');
+  };
+
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: <Home className="w-5 h-5" /> },
     { path: '/send-money', label: 'Send Money', icon: <Send className="w-5 h-5" /> },
@@ -29,21 +37,8 @@ export default function Layout({ children }) {
     { path: '/settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
     { path: '/demo', label: 'Demo', icon: <Zap className="w-5 h-5" /> },
   ];
-  
-  const toggleMobileMenu = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
-  };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate('/login');
-    } catch (error) {
-      console.error('Logout failed:', error);
-      // Still navigate to login even if logout fails
-      navigate('/login');
-    }
-  };
+  const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
   return (
     <div className="flex h-screen bg-gray-50">

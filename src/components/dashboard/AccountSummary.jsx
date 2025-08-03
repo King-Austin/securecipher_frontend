@@ -1,10 +1,18 @@
 import { Wallet, TrendingUp, EyeOff, Eye } from 'lucide-react';
-import { useState } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useState, useEffect } from 'react';
 
 export default function AccountSummary() {
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
-  const { user, accounts } = useAuth();
+  const [accounts, setAccounts] = useState([]);
+  const [user, setUser] = useState({});
+
+  // Load user and accounts from localStorage
+  useEffect(() => {
+    const userData = localStorage.getItem('userProfile');
+    const accountData = localStorage.getItem('userAccounts');
+    if (userData) setUser(JSON.parse(userData));
+    if (accountData) setAccounts(JSON.parse(accountData));
+  }, []);
 
   // Find the primary account
   const primaryAccount = accounts.find(acc => acc.is_primary) || accounts[0] || {};
@@ -45,7 +53,7 @@ export default function AccountSummary() {
           <div className="flex items-baseline">
             <span className="text-2xl font-bold text-white mr-1">₦</span>
             <h3 className="text-3xl font-bold text-white">
-              {isBalanceHidden ? '•••••••' : formatCurrency(primaryAccount.balance)}
+              {isBalanceHidden ? '•••••••' : formatCurrency(primaryAccount.available_balance)}
             </h3>
           </div>
         </div>
