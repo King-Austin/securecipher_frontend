@@ -196,17 +196,16 @@ export async function decryptPrivateKey(encrypted, pin, salt, iv) {
 }
 
 // Fetch server public key from backend
-  // Send to backend
-  const SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL = process.env.SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL;
-  if (!SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL) {
-      throw new Error('SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL is not defined in environment variables');
-  }
-  // Ensure the URL is valid
-  if (!SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL.startsWith('http')) {
-      throw new Error('SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL must start with http:// or https://');
-  }
+const SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL = import.meta.env.VITE_SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL;
+if (!SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL) {
+    throw new Error('SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL is not defined in environment variables');
+}
+if (!SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL.startsWith('http')) {
+    throw new Error('SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL must start with http:// or https://');
+}
+
 export async function getServerPublicKey() {
-    const res = await fetch('SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL');
+    const res = await fetch(SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL);
     const pem = await res.text();
-    return await importServerPublicKey(pem); // Uses your importServerPublicKey function
+    return await importServerPublicKey(pem);
 }
