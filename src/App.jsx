@@ -35,12 +35,7 @@ function AppRoutes() {
       <Route path="/register" element={<Registration />} /> 
       <Route path="/login" element={<Login />} />
       
-      {/* Demo route - accessible to everyone */}
-      <Route path="/demo" element={
-        <Layout>
-          <PINSetup />
-        </Layout>
-      } />
+
       
       {/* Protected routes with Layout */}
       <Route path="/dashboard" element={
