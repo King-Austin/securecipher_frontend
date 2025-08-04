@@ -131,6 +131,7 @@ export default function Registration() {
         bvn: formData.bvn,
         username: formData.username,
       };
+      console.log('Registration Payload:', registrationPayload);
       // Unified secure request
       const response = await secureRequest({
         target: 'register',
@@ -346,8 +347,8 @@ function Step3({ formData, handleChange, errors, inputRef, firstErrorRef }) {
   return (
     <div className="space-y-6">
       <InputField name="username" label="Username" value={formData.username} onChange={handleChange} error={errors.username} inputRef={inputRef} firstErrorRef={firstErrorRef} autoFocus />
-      <InputField name="pin" type="password" label="6-Digit Security PIN" placeholder="your pin e.g 328712" inputMode="numeric" pattern="[0-9]" value={formData.pin} onChange={handleChange} error={errors.pin} maxLength={6} />
-      <InputField name="confirm_pin" type="password" pattern="[0-9]" label="Confirm PIN" value={formData.confirm_pin} onChange={handleChange} error={errors.confirm_pin} placeholder='repeat the pin' maxLength={6} />
+      <InputField name="pin" type="password" label="6-Digit Security PIN" placeholder="your pin e.g 328712" inputMode="numeric" pattern="[0-9]{6}" value={formData.pin} onChange={handleChange} error={errors.pin} maxLength={6} />
+      <InputField name="confirm_pin" type="password" pattern="[0-9]{6}" label="Confirm PIN" value={formData.confirm_pin} onChange={handleChange} error={errors.confirm_pin} placeholder='repeat the pin' maxLength={6} />
       <div className="mt-2 p-3 bg-green-50 rounded text-green-700 text-sm">
         <strong>What is your PIN used for?</strong>
         <ul className="list-disc ml-5 mt-1">

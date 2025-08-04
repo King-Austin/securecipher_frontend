@@ -29,9 +29,11 @@ export async function exportPublicKeyAsPem(publicKey) {
     return `-----BEGIN PUBLIC KEY-----\n${b64}\n-----END PUBLIC KEY-----`;
 }
 export async function importServerPublicKey(pem) {
-    const pemHeader = "-----BEGIN PUBLIC KEY-----";
-    const pemFooter = "-----END PUBLIC KEY-----";
-    const pemContents = pem.substring(pemHeader.length, pem.length - pemFooter.length - 1).trim();
+    // Remove header/footer and whitespace
+    const pemContents = pem
+        .replace(/-----BEGIN PUBLIC KEY-----/, '')
+        .replace(/-----END PUBLIC KEY-----/, '')
+        .replace(/\s+/g, '');
     const binaryDer = fromBase64(pemContents);
     return await window.crypto.subtle.importKey(
         'spki',
@@ -74,22 +76,32 @@ export async function deriveSessionKey(sharedSecret) {
 
 // --- Canonical JSON ---
 export function canonicalizeJson(data) {
-    if (data === null || typeof data !== 'object') return JSON.stringify(data);
-    if (Array.isArray(data)) return `[${data.map(canonicalizeJson).join(',')}]`;
-    const keys = Object.keys(data).sort();
-    return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalizeJson(data[k])).join(',') + '}';
+    return JSON.stringify(data, Object.keys(data).sort(), 0).replace(/\s+/g, '');
 }
 
 // --- Signing ---
 export async function signTransaction(payload, privateKey) {
     const canonicalJson = canonicalizeJson(payload);
+    console.log('Signing data (canonical JSON):', canonicalJson);
+
     const data = new TextEncoder().encode(canonicalJson);
+    console.log('Signing data (UTF-8 bytes):', Array.from(data));
+
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    console.log('data hash (SHA-256):', hashHex);
+
+    // Sign the data using ECDSA with SHA-256
     const signature = await window.crypto.subtle.sign(
         { name: 'ECDSA', hash: { name: 'SHA-256' } },
         privateKey,
         data
     );
-    return toBase64(signature);
+    const signatureBase64 = toBase64(signature);
+    console.log('Signature (base64):', signatureBase64);
+
+    return signatureBase64;
 }
 
 // --- Encryption/Decryption ---
@@ -206,6 +218,6 @@ if (!SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL.startsWith('http')) {
 
 export async function getServerPublicKey() {
     const res = await fetch(SECURECIPHER_MIDDLEWARE_PUBLIC_KEY_URL);
-    const pem = await res.text();
-    return await importServerPublicKey(pem);
+    const pem = await res.json();
+    return await importServerPublicKey(pem.public_key);
 }
