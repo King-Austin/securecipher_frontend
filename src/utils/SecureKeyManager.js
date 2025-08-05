@@ -75,12 +75,39 @@ export async function deriveSessionKey(sharedSecret) {
 }
 
 // --- Canonical JSON ---
-export function canonicalizeJson(data) {
-    return JSON.stringify(data, Object.keys(data).sort(), 0).replace(/\s+/g, '');
+// Recursively sort all keys in an object for canonicalization
+function sortKeysRecursively(obj) {
+    if (Array.isArray(obj)) {
+        return obj.map(sortKeysRecursively);
+    } else if (obj !== null && typeof obj === 'object') {
+        const sorted = {};
+        Object.keys(obj).sort().forEach(key => {
+            sorted[key] = sortKeysRecursively(obj[key]);
+        });
+        return sorted;
+    }
+    return obj;
 }
+
+export function canonicalizeJson(obj) {
+    if (obj === null || typeof obj !== 'object') {
+        return JSON.stringify(obj);
+    }
+    if (Array.isArray(obj)) {
+        return `[${obj.map(canonicalizeJson).join(',')}]`;
+    }
+    const keys = Object.keys(obj).sort();
+    const pairs = keys.map(k => `"${k}":${canonicalizeJson(obj[k])}`);
+    return `{${pairs.join(',')}}`;
+}
+
 
 // --- Signing ---
 export async function signTransaction(payload, privateKey) {
+    console.log('signTransaction received payload:', JSON.stringify(payload, null, 2));
+    if (payload && payload.transaction_data && Object.keys(payload.transaction_data).length === 0) {
+        console.warn('signTransaction: transaction_data is EMPTY!');
+    }
     const canonicalJson = canonicalizeJson(payload);
     console.log('Signing data (canonical JSON):', canonicalJson);
 

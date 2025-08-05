@@ -48,8 +48,6 @@ export async function secureRequest({ target, payload, pin }) {
     // FIX: Include timestamp and nonce in the signed payload
     const signPayloadDict = {
         transaction_data: payload,
-        timestamp,
-        nonce,
     };
     console.log('Payload to sign:', signPayloadDict); // Debug: should show full registration data, timestamp, nonce
 
@@ -65,7 +63,6 @@ export async function secureRequest({ target, payload, pin }) {
         transaction_data: payload,
         client_signature: clientSignature,
         client_public_key: publicKeyPem,
-        timestamp,
         nonce,
     };
     console.log('Secure payload (before encryption):', securePayload);
