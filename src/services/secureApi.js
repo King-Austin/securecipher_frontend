@@ -95,6 +95,7 @@ export async function secureRequest({ target, payload, pin }) {
 
     // Handle response
     const responseData = await res.json();
+    console.log("Response data from backend:", responseData);
     if (!res.ok) {
         let errorMsg = 'An unknown error occurred.';
         try {
